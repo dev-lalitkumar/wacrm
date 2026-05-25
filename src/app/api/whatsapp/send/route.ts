@@ -70,12 +70,12 @@ export async function POST(request: Request) {
       )
     }
 
-    // Fetch conversation and contact
+    // Fetch conversation and contact. RLS restricts an Executive to
+    // their assigned conversations; Admin/Owner/Manager see all.
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
       .select('*, contact:contacts(*)')
       .eq('id', conversation_id)
-      .eq('user_id', user.id)
       .single()
 
     if (convError || !conversation) {
@@ -102,11 +102,11 @@ export async function POST(request: Request) {
       )
     }
 
-    // Fetch and decrypt WhatsApp config
+    // Fetch and decrypt the org-wide WhatsApp config (singleton).
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
       .select('*')
-      .eq('user_id', user.id)
+      .limit(1)
       .single()
 
     if (configError || !config) {
@@ -297,7 +297,6 @@ export async function POST(request: Request) {
           ended_at: new Date().toISOString(),
           end_reason: 'agent_replied',
         })
-        .eq('user_id', user.id)
         .eq('contact_id', contact.id)
         .eq('status', 'active')
       if (pauseErr) {

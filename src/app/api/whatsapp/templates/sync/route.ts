@@ -96,11 +96,11 @@ export async function POST() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // whatsapp_config holds waba_id + encrypted access_token.
+    // Org-wide WhatsApp config singleton — holds waba_id + token.
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
       .select('*')
-      .eq('user_id', user.id)
+      .limit(1)
       .single()
 
     if (configError || !config) {
@@ -173,6 +173,8 @@ export async function POST() {
       const footer = (t.components ?? []).find((c) => c.type === 'FOOTER')
 
       const row = {
+        // user_id is the audit/created_by stamp now; the templates
+        // table is workspace-shared via RLS.
         user_id: user.id,
         name: t.name,
         category: normalizeCategory(t.category),
@@ -185,10 +187,10 @@ export async function POST() {
         updated_at: new Date().toISOString(),
       }
 
+      // Templates are workspace-wide; match on (name, language).
       const { data: existing, error: lookupErr } = await supabase
         .from('message_templates')
         .select('id')
-        .eq('user_id', user.id)
         .eq('name', t.name)
         .eq('language', t.language)
         .maybeSingle()

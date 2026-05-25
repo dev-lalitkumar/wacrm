@@ -132,12 +132,12 @@ export default function InboxPage() {
 
       if (!user) return;
 
-      // Table is `whatsapp_config` (singular) — the previous "whatsapp_configs"
-      // query always returned no rows, so the banner always showed "not connected".
+      // Org-wide singleton config — RLS lets every active member
+      // read it. We just need any (and the only) row.
       const { data } = await supabase
         .from("whatsapp_config")
         .select("status")
-        .eq("user_id", user.id)
+        .limit(1)
         .maybeSingle();
 
       setWhatsappConnected(data?.status === "connected");

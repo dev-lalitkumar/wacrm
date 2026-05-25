@@ -180,9 +180,13 @@ export function MessageThread({
   useEffect(() => {
     let cancelled = false;
     const supabase = createClient();
+    // Only active members can be picked as the agent — RLS would
+    // refuse to surface assigned conversations to a deactivated one
+    // anyway.
     supabase
       .from("profiles")
       .select("*")
+      .eq("is_active", true)
       .order("full_name")
       .then(({ data, error }) => {
         if (cancelled) return;

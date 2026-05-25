@@ -69,11 +69,11 @@ export async function POST(request: Request) {
       );
     }
 
+    // RLS scopes Executive to assigned conversations; others see all.
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
-      .select('id, user_id, contact:contacts(phone)')
+      .select('id, contact:contacts(phone)')
       .eq('id', targetMessage.conversation_id)
-      .eq('user_id', user.id)
       .maybeSingle();
 
     if (convError || !conversation) {
@@ -93,11 +93,11 @@ export async function POST(request: Request) {
       );
     }
 
-    // WhatsApp config + access token
+    // Org-wide WhatsApp config singleton.
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
       .select('phone_number_id, access_token')
-      .eq('user_id', user.id)
+      .limit(1)
       .single();
 
     if (configError || !config) {

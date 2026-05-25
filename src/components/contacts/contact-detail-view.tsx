@@ -3,7 +3,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal } from '@/types';
+import { useAuth } from '@/hooks/use-auth';
+import { canAssignContacts } from '@/lib/auth/permissions';
+import type {
+  Contact,
+  Tag,
+  ContactTag,
+  ContactNote,
+  CustomField,
+  ContactCustomValue,
+  Deal,
+  Profile,
+} from '@/types';
 import {
   Sheet,
   SheetContent,
@@ -47,6 +58,8 @@ export function ContactDetailView({
   onUpdated,
 }: ContactDetailViewProps) {
   const supabase = createClient();
+  const { profile } = useAuth();
+  const canAssign = canAssignContacts(profile?.role ?? null);
 
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(false);
@@ -57,6 +70,8 @@ export function ContactDetailView({
   const [editPhone, setEditPhone] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editCompany, setEditCompany] = useState('');
+  const [editAssignedTo, setEditAssignedTo] = useState('');
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [savingDetails, setSavingDetails] = useState(false);
 
   // Tags tab
@@ -96,9 +111,20 @@ export function ContactDetailView({
       setEditPhone(data.phone);
       setEditEmail(data.email ?? '');
       setEditCompany(data.company ?? '');
+      setEditAssignedTo(data.assigned_to ?? '');
     }
     setLoading(false);
   }, [contactId, supabase]);
+
+  const fetchProfiles = useCallback(async () => {
+    if (!canAssign) return;
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, full_name, email')
+      .eq('is_active', true)
+      .order('full_name');
+    if (data) setProfiles(data as Profile[]);
+  }, [canAssign, supabase]);
 
   const fetchTags = useCallback(async () => {
     if (!contactId) return;
@@ -170,8 +196,9 @@ export function ContactDetailView({
       fetchNotes();
       fetchCustomFields();
       fetchDeals();
+      fetchProfiles();
     }
-  }, [open, contactId, fetchContact, fetchTags, fetchNotes, fetchCustomFields, fetchDeals]);
+  }, [open, contactId, fetchContact, fetchTags, fetchNotes, fetchCustomFields, fetchDeals, fetchProfiles]);
 
   async function copyPhone() {
     if (!contact) return;
@@ -187,15 +214,19 @@ export function ContactDetailView({
     }
 
     setSavingDetails(true);
+    const updates: Record<string, unknown> = {
+      name: editName.trim() || null,
+      phone: editPhone.trim(),
+      email: editEmail.trim() || null,
+      company: editCompany.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+    if (canAssign) {
+      updates.assigned_to = editAssignedTo || null;
+    }
     const { error } = await supabase
       .from('contacts')
-      .update({
-        name: editName.trim() || null,
-        phone: editPhone.trim(),
-        email: editEmail.trim() || null,
-        company: editCompany.trim() || null,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updates)
       .eq('id', contactId);
 
     if (error) {
@@ -452,6 +483,25 @@ export function ContactDetailView({
                       className="bg-slate-800 border-slate-700 text-white h-8 text-sm"
                     />
                   </div>
+                  {canAssign && (
+                    <div className="space-y-1.5">
+                      <Label className="text-slate-400 text-xs">
+                        Assigned to
+                      </Label>
+                      <select
+                        value={editAssignedTo}
+                        onChange={(e) => setEditAssignedTo(e.target.value)}
+                        className="h-8 w-full rounded-md border border-slate-700 bg-slate-800 px-2 text-sm text-white outline-none focus:border-primary"
+                      >
+                        <option value="">Unassigned</option>
+                        {profiles.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.full_name || p.email}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <Button
                     onClick={saveDetails}
                     disabled={savingDetails}

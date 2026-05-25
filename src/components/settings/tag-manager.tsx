@@ -50,18 +50,18 @@ export function TagManager() {
       setLoading(false);
       return;
     }
-    fetchTags(user.id);
+    fetchTags();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user?.id]);
 
-  async function fetchTags(userId: string) {
+  async function fetchTags() {
     try {
       setLoading(true);
 
+      // Tags are workspace-shared; RLS handles role gating.
       const { data, error } = await supabase
         .from('tags')
         .select('*')
-        .eq('user_id', userId)
         .order('created_at', { ascending: true });
 
       if (error) throw error;
@@ -101,7 +101,7 @@ export function TagManager() {
       setDialogOpen(false);
       setNewTagName('');
       setSelectedColor(PRESET_COLORS[3].value);
-      if (user) await fetchTags(user.id);
+      if (user) await fetchTags();
     } catch (err) {
       console.error('Create error:', err);
       toast.error('Failed to create tag');

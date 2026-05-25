@@ -51,10 +51,12 @@ export interface DispatchInput {
 export async function runAutomationsForTrigger(input: DispatchInput): Promise<void> {
   try {
     const db = supabaseAdmin()
+    // Single-org dataset — match every active automation for the
+    // trigger type. `input.userId` is no longer a scoping key; it's
+    // recorded into automation_logs as the actor that fired it.
     const { data: automations, error } = await db
       .from('automations')
       .select('*')
-      .eq('user_id', input.userId)
       .eq('trigger_type', input.triggerType)
       .eq('is_active', true)
 
@@ -375,10 +377,12 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       if (!args.contactId) throw new Error('assign_conversation needs a contact')
       let agentId = cfg.agent_id
       if (cfg.mode === 'round_robin') {
+        // Single-org: pick any active member. A real round-robin would
+        // need a state column; v1 settles for "first active profile".
         const { data: profiles } = await db
           .from('profiles')
           .select('user_id')
-          .eq('user_id', args.automation.user_id)
+          .eq('is_active', true)
           .limit(1)
         agentId = profiles?.[0]?.user_id
       }
@@ -386,7 +390,6 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       await db
         .from('conversations')
         .update({ assigned_agent_id: agentId })
-        .eq('user_id', args.automation.user_id)
         .eq('contact_id', args.contactId)
       return `assigned to ${agentId}`
     }
@@ -438,7 +441,6 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       await db
         .from('conversations')
         .update({ status: 'closed', updated_at: new Date().toISOString() })
-        .eq('user_id', args.automation.user_id)
         .eq('contact_id', args.contactId)
       return 'conversation closed'
     }
@@ -466,7 +468,6 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
   const { data, error } = await supabaseAdmin()
     .from('conversations')
     .select('id')
-    .eq('user_id', args.automation.user_id)
     .eq('contact_id', args.contactId)
     .maybeSingle()
   if (error) throw new Error(`conversation lookup failed: ${error.message}`)

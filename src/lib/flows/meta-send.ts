@@ -53,14 +53,14 @@ export async function engineSendText(
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
 
+  // Single-org dataset — contact + WhatsApp config are workspace-wide.
   const { data: contact, error: contactErr } = await db
     .from('contacts')
     .select('id, phone')
     .eq('id', args.contactId)
-    .eq('user_id', args.userId)
     .maybeSingle()
   if (contactErr || !contact?.phone) {
-    throw new Error('contact not found for this user')
+    throw new Error('contact not found')
   }
 
   const sanitized = sanitizePhoneForMeta(contact.phone)
@@ -71,10 +71,10 @@ export async function engineSendText(
   const { data: config, error: configErr } = await db
     .from('whatsapp_config')
     .select('*')
-    .eq('user_id', args.userId)
+    .limit(1)
     .single()
   if (configErr || !config) {
-    throw new Error('WhatsApp not configured for this account')
+    throw new Error('WhatsApp not configured')
   }
 
   const accessToken = decrypt(config.access_token)
@@ -192,19 +192,14 @@ async function sendInteractiveViaMeta(
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
 
-  // Scope the contact lookup by user_id — same defense-in-depth
-  // rationale as automations/meta-send.ts. Service-role client
-  // bypasses RLS, so an attacker who could call into the engine
-  // with a contact_id from another tenant would otherwise send
-  // through their own WhatsApp config to a stranger's number.
+  // Single-org dataset — contact + WhatsApp config are workspace-wide.
   const { data: contact, error: contactErr } = await db
     .from('contacts')
     .select('id, phone')
     .eq('id', input.contactId)
-    .eq('user_id', input.userId)
     .maybeSingle()
   if (contactErr || !contact?.phone) {
-    throw new Error('contact not found for this user')
+    throw new Error('contact not found')
   }
 
   const sanitized = sanitizePhoneForMeta(contact.phone)
@@ -215,10 +210,10 @@ async function sendInteractiveViaMeta(
   const { data: config, error: configErr } = await db
     .from('whatsapp_config')
     .select('*')
-    .eq('user_id', input.userId)
+    .limit(1)
     .single()
   if (configErr || !config) {
-    throw new Error('WhatsApp not configured for this account')
+    throw new Error('WhatsApp not configured')
   }
 
   const accessToken = decrypt(config.access_token)

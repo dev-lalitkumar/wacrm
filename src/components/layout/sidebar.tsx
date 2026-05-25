@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
+import { canViewSidebarItem, ROLE_LABEL } from "@/lib/auth/permissions";
 import {
   LayoutDashboard,
   MessageSquare,
@@ -41,6 +42,12 @@ interface NavItem {
    * Purely informational — doesn't affect routing or access.
    */
   beta?: boolean;
+  /**
+   * Optional permission slot — when set, the row is only visible to
+   * roles for which `canViewSidebarItem(slot, role)` is true. Items
+   * without a slot are visible to every signed-in user.
+   */
+  permission?: "broadcasts" | "automations" | "flows";
 }
 
 const navItems: NavItem[] = [
@@ -48,9 +55,25 @@ const navItems: NavItem[] = [
   { href: "/inbox", label: "Inbox", icon: MessageSquare },
   { href: "/contacts", label: "Contacts", icon: Users },
   { href: "/pipelines", label: "Pipelines", icon: GitBranch },
-  { href: "/broadcasts", label: "Broadcasts", icon: Radio },
-  { href: "/automations", label: "Automations", icon: Zap },
-  { href: "/flows", label: "Flows", icon: Workflow, beta: true },
+  {
+    href: "/broadcasts",
+    label: "Broadcasts",
+    icon: Radio,
+    permission: "broadcasts",
+  },
+  {
+    href: "/automations",
+    label: "Automations",
+    icon: Zap,
+    permission: "automations",
+  },
+  {
+    href: "/flows",
+    label: "Flows",
+    icon: Workflow,
+    beta: true,
+    permission: "flows",
+  },
 ];
 
 const bottomNavItems = [
@@ -145,6 +168,14 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="flex flex-col gap-1">
             {navItems.map((item) => {
+              // Hide role-restricted entries before any rendering work.
+              if (
+                item.permission &&
+                !canViewSidebarItem(item.permission, profile?.role ?? null)
+              ) {
+                return null;
+              }
+
               const isActive =
                 pathname === item.href ||
                 (item.href !== "/dashboard" && pathname.startsWith(item.href));
@@ -232,9 +263,19 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                 </AvatarFallback>
               </Avatar>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-white">
-                  {profile?.full_name ?? "User"}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="truncate text-sm font-medium text-white">
+                    {profile?.full_name ?? "User"}
+                  </p>
+                  {profile?.role && (
+                    <span
+                      className="shrink-0 rounded-full border border-slate-700 bg-slate-800/70 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-300"
+                      aria-label={`Role: ${ROLE_LABEL[profile.role]}`}
+                    >
+                      {ROLE_LABEL[profile.role]}
+                    </span>
+                  )}
+                </div>
                 <p className="truncate text-xs text-slate-400">
                   {profile?.email ?? ""}
                 </p>

@@ -229,10 +229,10 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     const phones = [...uniqueByPhone.keys()];
 
     // Single round-trip lookup of existing contacts by phone.
+    // Workspace-wide; RLS restricts Executives to assigned rows.
     const { data: existing, error: lookupErr } = await supabase
       .from('contacts')
       .select('*')
-      .eq('user_id', user.id)
       .in('phone', phones);
     if (lookupErr) {
       throw new Error(`Failed to look up CSV contacts: ${lookupErr.message}`);

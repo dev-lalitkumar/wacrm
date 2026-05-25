@@ -3,7 +3,9 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import type { Contact, Tag, ContactTag } from '@/types';
+import { useAuth } from '@/hooks/use-auth';
+import { canAssignContacts } from '@/lib/auth/permissions';
+import type { Contact, Tag, ContactTag, Profile } from '@/types';
 import {
   Dialog,
   DialogContent,
@@ -34,17 +36,22 @@ export function ContactForm({
   onSaved,
 }: ContactFormProps) {
   const supabase = createClient();
+  const { profile } = useAuth();
   const isEdit = !!contact;
+  const canAssign = canAssignContacts(profile?.role ?? null);
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [company, setCompany] = useState('');
+  const [assignedTo, setAssignedTo] = useState('');
   const [saving, setSaving] = useState(false);
 
   const [tags, setTags] = useState<Tag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [loadingTags, setLoadingTags] = useState(false);
+
+  const [profiles, setProfiles] = useState<Profile[]>([]);
 
   useEffect(() => {
     if (open) {
@@ -52,10 +59,16 @@ export function ContactForm({
       setPhone(contact?.phone ?? '');
       setEmail(contact?.email ?? '');
       setCompany(contact?.company ?? '');
+      setAssignedTo(contact?.assigned_to ?? '');
       setSelectedTagIds(contactTags.map((ct) => ct.tag_id));
       fetchTags();
+      if (canAssign) fetchProfiles();
     }
-  }, [open, contact]);
+    // Inputs are intentional — re-syncing on contactTags/fetcher
+    // identity changes would either spam the network or stomp
+    // user edits as the parent rerenders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, contact, canAssign]);
 
   async function fetchTags() {
     setLoadingTags(true);
@@ -65,6 +78,17 @@ export function ContactForm({
       .order('name');
     if (data) setTags(data);
     setLoadingTags(false);
+  }
+
+  async function fetchProfiles() {
+    // Only active members are valid assignees; deactivated ones
+    // can no longer access anything via RLS.
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, full_name, email')
+      .eq('is_active', true)
+      .order('full_name');
+    if (data) setProfiles(data as Profile[]);
   }
 
   function toggleTag(tagId: string) {
@@ -95,27 +119,38 @@ export function ContactForm({
       let contactId = contact?.id;
 
       if (isEdit && contactId) {
+        const updates: Record<string, unknown> = {
+          name: name.trim() || null,
+          phone: phone.trim(),
+          email: email.trim() || null,
+          company: company.trim() || null,
+          updated_at: new Date().toISOString(),
+        };
+        // Only roles that can reassign send `assigned_to`. Sending it
+        // unconditionally would let an Executive's edit silently clear
+        // the assignment on submit.
+        if (canAssign) {
+          updates.assigned_to = assignedTo || null;
+        }
         const { error } = await supabase
           .from('contacts')
-          .update({
-            name: name.trim() || null,
-            phone: phone.trim(),
-            email: email.trim() || null,
-            company: company.trim() || null,
-            updated_at: new Date().toISOString(),
-          })
+          .update(updates)
           .eq('id', contactId);
         if (error) throw error;
       } else {
+        const insertPayload: Record<string, unknown> = {
+          user_id: user.id,
+          name: name.trim() || null,
+          phone: phone.trim(),
+          email: email.trim() || null,
+          company: company.trim() || null,
+        };
+        if (canAssign && assignedTo) {
+          insertPayload.assigned_to = assignedTo;
+        }
         const { data, error } = await supabase
           .from('contacts')
-          .insert({
-            user_id: user.id,
-            name: name.trim() || null,
-            phone: phone.trim(),
-            email: email.trim() || null,
-            company: company.trim() || null,
-          })
+          .insert(insertPayload)
           .select('id')
           .single();
         if (error) throw error;
@@ -222,6 +257,30 @@ export function ContactForm({
               className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
             />
           </div>
+
+          {canAssign && (
+            <div className="space-y-2">
+              <Label htmlFor="cf-assigned" className="text-slate-300">
+                Assigned to
+              </Label>
+              <select
+                id="cf-assigned"
+                value={assignedTo}
+                onChange={(e) => setAssignedTo(e.target.value)}
+                className="h-9 w-full rounded-lg border border-slate-700 bg-slate-800 px-2.5 text-sm text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              >
+                <option value="">Unassigned</option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.full_name || p.email}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-500">
+                Executives only see contacts assigned to them.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label className="text-slate-300">Tags</Label>

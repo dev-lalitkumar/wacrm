@@ -2,19 +2,14 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { verifyPhoneNumber } from '@/lib/whatsapp/meta-api'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
+import { requireRole, isErrorResponse } from '@/lib/auth/require-role'
 
 /**
  * GET /api/whatsapp/config
  *
- * Used by the "Test API Connection" button and by the page to check
- * whether the saved config is healthy. Returns 200 in all non-auth cases
- * so the UI can render an appropriate message rather than show a 500.
- *
- * Response shape:
- *   { connected: true,  phone_info: {...} }
- *   { connected: false, reason: 'no_config',        message: '...' }
- *   { connected: false, reason: 'token_corrupted',  message: '...', needs_reset: true }
- *   { connected: false, reason: 'meta_api_error',   message: '...' }
+ * Reads the org-wide WhatsApp config row (singleton) and verifies
+ * its tokens against Meta. Any signed-in member can call this so
+ * the inbox can render the connected banner; writes are admin/owner.
  */
 export async function GET() {
   try {
@@ -32,7 +27,7 @@ export async function GET() {
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
       .select('phone_number_id, access_token, status')
-      .eq('user_id', user.id)
+      .limit(1)
       .maybeSingle()
 
     if (configError) {
@@ -54,8 +49,6 @@ export async function GET() {
       )
     }
 
-    // Try to decrypt the stored token with the current ENCRYPTION_KEY.
-    // If this fails, the key changed (or was never consistent across envs).
     let accessToken: string
     try {
       accessToken = decrypt(config.access_token)
@@ -73,7 +66,6 @@ export async function GET() {
       )
     }
 
-    // Validate credentials against Meta
     try {
       const phoneInfo = await verifyPhoneNumber({
         phoneNumberId: config.phone_number_id,
@@ -104,21 +96,15 @@ export async function GET() {
 /**
  * POST /api/whatsapp/config
  *
- * Saves or updates the WhatsApp config for the authenticated user.
+ * Saves or updates the org-wide WhatsApp config. Admin / Owner only.
  * Verifies credentials with Meta first, then encrypts and stores.
  */
 export async function POST(request: Request) {
   try {
+    const caller = await requireRole(['admin', 'owner'])
+    if (isErrorResponse(caller)) return caller
+
     const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
 
     const body = await request.json()
     const { phone_number_id, waba_id, access_token, verify_token } = body
@@ -130,7 +116,6 @@ export async function POST(request: Request) {
       )
     }
 
-    // Verify credentials with Meta BEFORE saving
     let phoneInfo
     try {
       phoneInfo = await verifyPhoneNumber({
@@ -146,7 +131,6 @@ export async function POST(request: Request) {
       )
     }
 
-    // Encrypt sensitive tokens before storing
     let encryptedAccessToken: string
     let encryptedVerifyToken: string | null
     try {
@@ -164,11 +148,13 @@ export async function POST(request: Request) {
       )
     }
 
-    // Upsert — overwrite any existing (possibly corrupted) config
+    // Singleton row — at most one config in the org. Find it by id
+    // (not by user_id) so an Owner can update the row the original
+    // Admin created.
     const { data: existing } = await supabase
       .from('whatsapp_config')
       .select('id')
-      .eq('user_id', user.id)
+      .limit(1)
       .maybeSingle()
 
     if (existing) {
@@ -183,7 +169,7 @@ export async function POST(request: Request) {
           connected_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
-        .eq('user_id', user.id)
+        .eq('id', existing.id)
 
       if (updateError) {
         console.error('Error updating whatsapp_config:', updateError)
@@ -196,7 +182,7 @@ export async function POST(request: Request) {
       const { error: insertError } = await supabase
         .from('whatsapp_config')
         .insert({
-          user_id: user.id,
+          user_id: caller.userId,
           phone_number_id,
           waba_id: waba_id || null,
           access_token: encryptedAccessToken,
@@ -224,27 +210,29 @@ export async function POST(request: Request) {
 /**
  * DELETE /api/whatsapp/config
  *
- * Removes the authenticated user's WhatsApp configuration row.
- * Used by the "Reset Configuration" button to recover from a corrupted
- * encrypted token (mismatched ENCRYPTION_KEY across environments).
+ * Removes the org-wide WhatsApp configuration. Admin / Owner only.
  */
 export async function DELETE() {
   try {
+    const caller = await requireRole(['admin', 'owner'])
+    if (isErrorResponse(caller)) return caller
+
     const supabase = await createClient()
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
+    const { data: existing } = await supabase
+      .from('whatsapp_config')
+      .select('id')
+      .limit(1)
+      .maybeSingle()
 
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!existing) {
+      return NextResponse.json({ success: true })
     }
 
     const { error: deleteError } = await supabase
       .from('whatsapp_config')
       .delete()
-      .eq('user_id', user.id)
+      .eq('id', existing.id)
 
     if (deleteError) {
       console.error('Error deleting whatsapp_config:', deleteError)

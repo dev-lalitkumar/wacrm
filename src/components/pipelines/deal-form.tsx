@@ -109,7 +109,14 @@ export function DealForm({
     (async () => {
       const [c, p] = await Promise.all([
         supabase.from("contacts").select("*").order("name"),
-        supabase.from("profiles").select("*").order("full_name"),
+        // Only active members can be picked as an assignee; deactivated
+        // ones can't access the app anyway and RLS wouldn't surface
+        // assigned data to them.
+        supabase
+          .from("profiles")
+          .select("*")
+          .eq("is_active", true)
+          .order("full_name"),
       ]);
       if (cancelled) return;
       setContacts((c.data ?? []) as Contact[]);

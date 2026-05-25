@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { MessageSquare, CheckCircle } from "lucide-react";
+import { MessageSquare, CheckCircle, Lock } from "lucide-react";
 
 export default function SignupPage() {
   const [fullName, setFullName] = useState("");
@@ -23,7 +23,28 @@ export default function SignupPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  // null = still probing /api/auth/signup-open; the DB trigger
+  // is the real enforcer — this just decides what to render.
+  const [signupOpen, setSignupOpen] = useState<boolean | null>(null);
   const supabase = createClient();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/signup-open");
+        const json = (await res.json()) as { open?: boolean };
+        if (!cancelled) setSignupOpen(!!json.open);
+      } catch {
+        // Fail closed — show locked screen so we never leak the form
+        // when we can't confirm the workspace is fresh.
+        if (!cancelled) setSignupOpen(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,6 +81,46 @@ export default function SignupPage() {
     setSuccess(true);
     setLoading(false);
   };
+
+  if (signupOpen === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
+        <p className="text-sm text-slate-500">Loading…</p>
+      </div>
+    );
+  }
+
+  if (signupOpen === false) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
+        <Card className="w-full max-w-md border-slate-800 bg-slate-900">
+          <CardHeader className="items-center text-center">
+            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+              <Lock className="h-6 w-6 text-primary" />
+            </div>
+            <CardTitle className="text-xl text-white">
+              Signup is disabled
+            </CardTitle>
+            <CardDescription className="text-slate-400">
+              This workspace already has an administrator. New accounts
+              are created from the Team settings page — please contact
+              your administrator for access.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link href="/login">
+              <Button
+                variant="outline"
+                className="w-full border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+              >
+                Back to sign in
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (success) {
     return (

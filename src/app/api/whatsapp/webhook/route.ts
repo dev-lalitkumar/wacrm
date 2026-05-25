@@ -813,11 +813,12 @@ async function findOrCreateContact(
   phone: string,
   name: string
 ): Promise<ContactOutcome | null> {
-  // Look up existing contacts for this user
+  // Single-org dataset — list every contact and rely on phonesMatch
+  // for the (possibly-fuzzy) match. `userId` is only used as the
+  // audit/created_by stamp on a new insert below.
   const { data: contacts, error: contactsError } = await supabaseAdmin()
     .from('contacts')
     .select('*')
-    .eq('user_id', userId)
 
   if (contactsError) {
     console.error('Error fetching contacts:', contactsError)
@@ -858,11 +859,10 @@ async function findOrCreateContact(
 }
 
 async function findOrCreateConversation(userId: string, contactId: string) {
-  // Look for existing conversation
+  // Single-org dataset — at most one conversation per contact.
   const { data: existing, error: findError } = await supabaseAdmin()
     .from('conversations')
     .select('*')
-    .eq('user_id', userId)
     .eq('contact_id', contactId)
     .single()
 

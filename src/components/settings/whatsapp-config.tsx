@@ -59,14 +59,14 @@ export function WhatsAppConfig() {
       ? `${window.location.origin}/api/whatsapp/webhook`
       : '';
 
-  const fetchConfig = useCallback(async (userId: string) => {
+  const fetchConfig = useCallback(async () => {
     setLoading(true);
     try {
-      // Load form values from Supabase (shows what's in DB)
+      // Org-wide singleton config — RLS lets every active member read.
       const { data, error } = await supabase
         .from('whatsapp_config')
         .select('*')
-        .eq('user_id', userId)
+        .limit(1)
         .maybeSingle();
 
       if (error) {
@@ -127,7 +127,7 @@ export function WhatsAppConfig() {
       setLoading(false);
       return;
     }
-    fetchConfig(user.id);
+    fetchConfig();
   }, [authLoading, user, fetchConfig]);
 
   async function handleSave() {
@@ -185,7 +185,7 @@ export function WhatsAppConfig() {
           : 'Configuration saved successfully'
       );
 
-      if (user) await fetchConfig(user.id);
+      if (user) await fetchConfig();
     } catch (err) {
       console.error('Save error:', err);
       toast.error('Failed to save configuration');

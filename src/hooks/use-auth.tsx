@@ -10,19 +10,33 @@ import {
 } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import type { Role } from "@/lib/auth/permissions";
 
 interface Profile {
   id: string;
   full_name: string | null;
   email: string;
   avatar_url: string | null;
-  role: string | null;
+  role: Role | null;
   /**
    * Opted-in beta feature keys for this account. No current feature
    * reads this — Flows was the last user and went to soft-GA in PR
    * #134 — but the column survives for future beta gates.
    */
   beta_features: string[];
+  /**
+   * Set false by /api/users/[id] DELETE (soft delete). Inactive
+   * profiles can sign in but RLS refuses to return any data
+   * (every helper requires `is_active = TRUE`). UI surfaces this
+   * as a "your account is deactivated" screen.
+   */
+  is_active: boolean;
+  /**
+   * Set true when an Admin/Owner resets the user's password (or on
+   * Admin create). The dashboard layout server component redirects
+   * to `/change-password` until the flag clears.
+   */
+  must_change_password: boolean;
 }
 
 interface AuthContextValue {
@@ -76,7 +90,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, full_name, email, avatar_url, role, beta_features")
+        .select(
+          "id, full_name, email, avatar_url, role, beta_features, is_active, must_change_password",
+        )
         .eq("user_id", userId)
         .maybeSingle();
 
@@ -95,9 +111,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // narrow defensively in case the column hasn't been migrated yet
         // (older deployments running 011 lazily) — `null` reads as no
         // opt-ins, which is the safe default for any future beta gate.
+        // `is_active` / `must_change_password` were added in 013.
         setProfile({
           ...data,
+          role: (data.role ?? null) as Role | null,
           beta_features: data.beta_features ?? [],
+          is_active: data.is_active ?? true,
+          must_change_password: data.must_change_password ?? false,
         });
       }
     } catch (err) {

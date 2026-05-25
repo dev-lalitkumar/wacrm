@@ -13,17 +13,37 @@ export interface Profile {
    * the `profiles` row.
    */
   beta_features?: string[];
+  /**
+   * Set false by /api/users/[id] DELETE (soft-delete). Inactive
+   * profiles can sign in but RLS refuses every helper that requires
+   * `is_active = TRUE`. Added in migration 013.
+   */
+  is_active?: boolean;
+  /**
+   * True when an Admin/Owner provisioned the account or just reset
+   * the user's password — the dashboard layout forces the user
+   * through /change-password until this clears. Added in 013.
+   */
+  must_change_password?: boolean;
+  /** auth.users.id of the Admin/Owner who created this profile. */
+  created_by?: string | null;
   created_at: string;
 }
 
 export interface Contact {
   id: string;
+  /** auth.users.id of whoever first inserted the row (audit). */
   user_id: string;
   phone: string;
   name?: string;
   email?: string;
   company?: string;
   avatar_url?: string;
+  /**
+   * profiles.id of the team member responsible for the contact. RLS
+   * uses this to scope Executives to "their" contacts. Added in 013.
+   */
+  assigned_to?: string | null;
   created_at: string;
   updated_at: string;
 }

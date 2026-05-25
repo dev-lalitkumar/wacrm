@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { Loader2, KeyRound } from 'lucide-react';
 
-import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,8 +19,7 @@ import {
 const MIN_PASSWORD = 8;
 
 export function PasswordForm() {
-  const { profile } = useAuth();
-  const supabase = createClient();
+  const { profile, refreshProfile } = useAuth();
 
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
@@ -47,24 +45,24 @@ export function PasswordForm() {
     setSaving(true);
 
     try {
-      // Supabase doesn't expose a "verify password without issuing a
-      // session" API, so we re-authenticate with the provided current
-      // password. If it matches, the session refreshes silently; if it
-      // doesn't, we abort before calling updateUser.
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: profile.email,
-        password: current,
+      // Delegate to the server route so it can verify the current
+      // password AND clear the `must_change_password` flag in a single
+      // server-side transaction. Doing this on the client would require
+      // a service-role write to flip the flag, which we don't want
+      // to expose.
+      const res = await fetch('/api/users/me/change-password', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          current_password: current,
+          new_password: next,
+        }),
       });
-      if (signInError) {
-        toast.error('Current password is incorrect');
-        return;
-      }
-
-      const { error: updateError } = await supabase.auth.updateUser({
-        password: next,
-      });
-      if (updateError) {
-        toast.error(`Password update failed: ${updateError.message}`);
+      const payload = (await res.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!res.ok) {
+        toast.error(payload.error ?? 'Password update failed');
         return;
       }
 
@@ -72,6 +70,7 @@ export function PasswordForm() {
       setNext('');
       setConfirm('');
       toast.success('Password updated');
+      await refreshProfile();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       toast.error(msg);

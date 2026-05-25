@@ -179,10 +179,12 @@ async function loadActiveRunForContact(
   // .maybeSingle() throws on >1 row — which would kill dispatch for
   // that contact's webhook entirely. .limit(1) is forgiving: pick the
   // newest, let the cron sweep clean up the stale one.
+  // Single-org dataset — at most one active run per contact (enforced
+  // by the partial unique index `idx_one_active_run_per_contact`).
+  // userId is no longer a scoping key.
   const { data, error } = await db
     .from("flow_runs")
     .select("*")
-    .eq("user_id", userId)
     .eq("contact_id", contactId)
     .eq("status", "active")
     .order("started_at", { ascending: false })
@@ -288,7 +290,6 @@ async function isDuplicateInbound(
   const { data: runs } = await db
     .from("flow_runs")
     .select("id")
-    .eq("user_id", userId)
     .eq("contact_id", contactId);
   if (!runs?.length) return false;
   const runIds = runs.map((r) => (r as { id: string }).id);
@@ -315,10 +316,10 @@ async function findEntryFlow(
   // Pull all active flows for this user. Active set is bounded (the
   // builder discourages double-trigger overlap; partial index makes
   // the lookup index-supported).
+  // Single-org dataset — every active flow is in play.
   const { data: flows, error } = await db
     .from("flows")
     .select("*")
-    .eq("user_id", userId)
     .eq("status", "active")
     .order("created_at", { ascending: true });
   if (error || !flows) return null;
