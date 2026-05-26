@@ -8,6 +8,7 @@ import {
   User,
   Palette,
   Users,
+  LayoutList,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
@@ -18,12 +19,14 @@ import { PasswordForm } from '@/components/settings/password-form';
 import { SessionsCard } from '@/components/settings/sessions-card';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { TeamManager } from '@/components/settings/team-manager';
+import { CustomFieldsManager } from '@/components/settings/custom-fields-manager';
 import { useAuth } from '@/hooks/use-auth';
-import { canManageTeam } from '@/lib/auth/permissions';
+import { canManageTeam, canManageCustomFields } from '@/lib/auth/permissions';
 
 const TAB_VALUES = [
   'profile',
   'team',
+  'custom-fields',
   'whatsapp',
   'templates',
   'tags',
@@ -40,6 +43,7 @@ export default function SettingsPage() {
   const searchParams = useSearchParams();
   const { profile } = useAuth();
   const showTeam = canManageTeam(profile?.role ?? null);
+  const showCustomFields = canManageCustomFields(profile?.role ?? null);
 
   // The URL is the single source of truth for the active tab — no
   // local state, no sync effect. A previous revision duplicated this
@@ -50,6 +54,9 @@ export default function SettingsPage() {
   // Route-guard the Team tab — a non-Admin/Owner who pastes
   // ?tab=team into the URL should still land on Profile.
   if (tab === 'team' && !showTeam) {
+    tab = 'profile';
+  }
+  if (tab === 'custom-fields' && !showCustomFields) {
     tab = 'profile';
   }
 
@@ -85,6 +92,15 @@ export default function SettingsPage() {
             >
               <Users className="size-4" />
               Team
+            </TabsTrigger>
+          )}
+          {showCustomFields && (
+            <TabsTrigger
+              value="custom-fields"
+              className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
+            >
+              <LayoutList className="size-4" />
+              Custom Fields
             </TabsTrigger>
           )}
           <TabsTrigger
@@ -126,6 +142,12 @@ export default function SettingsPage() {
         {showTeam && (
           <TabsContent value="team">
             <TeamManager />
+          </TabsContent>
+        )}
+
+        {showCustomFields && (
+          <TabsContent value="custom-fields" className="space-y-6">
+            <CustomFieldsManager />
           </TabsContent>
         )}
 

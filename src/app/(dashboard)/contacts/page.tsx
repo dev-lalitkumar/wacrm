@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import type { Contact, Tag, ContactTag } from '@/types';
+import type { Contact, Tag, ContactTag, CustomField, Profile } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -40,12 +40,22 @@ import {
   Users,
   ChevronLeft,
   ChevronRight,
+  SlidersHorizontal,
+  X,
 } from 'lucide-react';
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from '@/components/ui/popover';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
 
 const PAGE_SIZE = 25;
+
+type ReminderTab = 'all' | 'today' | 'missed' | 'upcoming';
+interface ReminderCounts { all: number; today: number; missed: number; upcoming: number; }
 
 interface ContactWithTags extends Contact {
   tags?: Tag[];
@@ -59,6 +69,13 @@ export default function ContactsPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
+  const [reminderTab, setReminderTab] = useState<ReminderTab>('today');
+  const [reminderCounts, setReminderCounts] = useState<ReminderCounts>({ all: 0, today: 0, missed: 0, upcoming: 0 });
+  const [customTextFields, setCustomTextFields] = useState<CustomField[]>([]);
+  const [filterFields, setFilterFields] = useState<CustomField[]>([]);
+  const [activeFilters, setActiveFilters] = useState<Record<string, string[]>>({});
+  const [displayCustomFields, setDisplayCustomFields] = useState<CustomField[]>([]);
+  const [assigneesMap, setAssigneesMap] = useState<Record<string, Profile>>({});
 
   // Modals
   const [formOpen, setFormOpen] = useState(false);
@@ -83,11 +100,74 @@ export default function ContactsPage() {
     }
   }, [supabase]);
 
+  // Fetch custom text fields so we can include them in search
+  const fetchCustomTextFields = useCallback(async () => {
+    const { data } = await supabase
+      .from('custom_fields')
+      .select('id, field_name, field_type, applies_to')
+      .eq('applies_to', 'contact')
+      .in('field_type', ['text', 'number']);
+    if (data) setCustomTextFields(data as CustomField[]);
+  }, [supabase]);
+
+  // Fetch top-2 contact custom fields by sort_order — shown inline in table rows
+  const fetchDisplayCustomFields = useCallback(async () => {
+    const { data } = await supabase
+      .from('custom_fields')
+      .select('*')
+      .eq('applies_to', 'contact')
+      .order('sort_order')
+      .limit(2);
+    if (data) setDisplayCustomFields(data as CustomField[]);
+  }, [supabase]);
+
+  // Fetch filterable custom fields (select, multi_select, file)
+  const fetchFilterFields = useCallback(async () => {
+    const { data } = await supabase
+      .from('custom_fields')
+      .select('*')
+      .eq('applies_to', 'contact')
+      .in('field_type', ['select', 'multi_select', 'file'])
+      .order('sort_order');
+    if (data) setFilterFields(data as CustomField[]);
+  }, [supabase]);
+
+  // Fetch reminder counts across ALL contacts (not just current page)
+  const fetchReminderCounts = useCallback(async () => {
+    const now = new Date().toISOString();
+    const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
+    const todayEndISO = todayEnd.toISOString();
+
+    // Fetch deal contact IDs for each bucket first, then count distinct contacts
+    const [allRes, todayDeals, missedDeals, upcomingDeals] = await Promise.all([
+      supabase.from('contacts').select('id', { count: 'exact', head: true }),
+      supabase.from('deals').select('contact_id').eq('status', 'open').not('contact_id', 'is', null)
+        .gte('reminder_at', now).lte('reminder_at', todayEndISO),
+      supabase.from('deals').select('contact_id').eq('status', 'open').not('contact_id', 'is', null)
+        .lt('reminder_at', now),
+      supabase.from('deals').select('contact_id').eq('status', 'open').not('contact_id', 'is', null)
+        .gt('reminder_at', todayEndISO),
+    ]);
+
+    const uniq = (rows: { contact_id: string | null }[]) =>
+      new Set(rows.map((r) => r.contact_id).filter(Boolean)).size;
+
+    setReminderCounts({
+      all: allRes.count ?? 0,
+      today: uniq(todayDeals.data ?? []),
+      missed: uniq(missedDeals.data ?? []),
+      upcoming: uniq(upcomingDeals.data ?? []),
+    });
+  }, [supabase]);
+
   const fetchContacts = useCallback(async () => {
     setLoading(true);
 
     const from = page * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
+    const now = new Date().toISOString();
+    const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
+    const todayEndISO = todayEnd.toISOString();
 
     let query = supabase
       .from('contacts')
@@ -95,9 +175,53 @@ export default function ContactsPage() {
       .order('created_at', { ascending: false })
       .range(from, to);
 
+    // Reminder tab filter — scope to contacts with matching open deal reminders
+    if (reminderTab !== 'all') {
+      let dealQuery = supabase.from('deals').select('contact_id').eq('status', 'open').not('contact_id', 'is', null);
+      if (reminderTab === 'today')    dealQuery = dealQuery.gte('reminder_at', now).lte('reminder_at', todayEndISO);
+      if (reminderTab === 'missed')   dealQuery = dealQuery.lt('reminder_at', now);
+      if (reminderTab === 'upcoming') dealQuery = dealQuery.gt('reminder_at', todayEndISO);
+      const { data: dealRows } = await dealQuery;
+      const contactIds = [...new Set((dealRows ?? []).map((r) => r.contact_id).filter(Boolean) as string[])];
+      if (contactIds.length === 0) {
+        setContacts([]);
+        setTotalCount(0);
+        setLoading(false);
+        return;
+      }
+      query = query.in('id', contactIds);
+    }
+
     if (search.trim()) {
       const term = `%${search.trim()}%`;
-      query = query.or(`name.ilike.${term},phone.ilike.${term},email.ilike.${term}`);
+      const parts = [
+        `name.ilike.${term}`,
+        `phone.ilike.${term}`,
+        `email.ilike.${term}`,
+        ...customTextFields.map((f) => `custom_data->>${f.id}.ilike.${term}`),
+      ];
+      query = query.or(parts.join(','));
+    }
+
+    // Apply custom field filters
+    for (const f of filterFields) {
+      const selected = activeFilters[f.id];
+      if (!selected || selected.length === 0) continue;
+      if (f.field_type === 'file') {
+        if (selected[0] === 'available') {
+          query = query.not(`custom_data->>${f.id}`, 'is', null);
+        } else if (selected[0] === 'unavailable') {
+          query = query.is(`custom_data->>${f.id}`, null);
+        }
+      } else if (f.field_type === 'select') {
+        const orParts = selected.map((v) => `custom_data->>${f.id}.eq.${v}`);
+        query = query.or(orParts.join(','));
+      } else if (f.field_type === 'multi_select') {
+        // JSONB array contains each selected value (AND semantics — useful for multi-select)
+        for (const v of selected) {
+          query = query.filter(`custom_data->${f.id}`, 'cs', `["${v}"]`);
+        }
+      }
     }
 
     const { data, count, error } = await query;
@@ -129,6 +253,15 @@ export default function ContactsPage() {
       tagsByContact[ct.contact_id].push(ct.tag_id);
     });
 
+    // Batch-load assignee profiles for this page
+    const assignedToIds = [...new Set(data.map((c) => c.assigned_to).filter(Boolean) as string[])];
+    const profilesData = assignedToIds.length > 0
+      ? (await supabase.from('profiles').select('id, full_name, email').in('id', assignedToIds)).data
+      : [];
+    const newAssigneesMap: Record<string, Profile> = {};
+    (profilesData ?? []).forEach((p) => (newAssigneesMap[p.id] = p as Profile));
+    setAssigneesMap(newAssigneesMap);
+
     const enriched: ContactWithTags[] = data.map((c) => ({
       ...c,
       tags: (tagsByContact[c.id] ?? [])
@@ -138,7 +271,7 @@ export default function ContactsPage() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, tagsMap]);
+  }, [supabase, page, search, tagsMap, reminderTab, customTextFields, filterFields, activeFilters]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
@@ -148,6 +281,26 @@ export default function ContactsPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchTags();
   }, [fetchTags]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchCustomTextFields();
+  }, [fetchCustomTextFields]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchFilterFields();
+  }, [fetchFilterFields]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchDisplayCustomFields();
+  }, [fetchDisplayCustomFields]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchReminderCounts();
+  }, [fetchReminderCounts]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -205,6 +358,31 @@ export default function ContactsPage() {
   const hasNext = page < totalPages - 1;
   const hasPrev = page > 0;
 
+  const activeFilterCount = Object.values(activeFilters).filter((v) => v.length > 0).length;
+
+  function toggleFilter(fieldId: string, value: string) {
+    setActiveFilters((prev) => {
+      const current = prev[fieldId] ?? [];
+      const field = filterFields.find((f) => f.id === fieldId);
+      // file and select are single-value; multi_select allows multiple
+      if (field?.field_type === 'multi_select') {
+        const next = current.includes(value)
+          ? current.filter((v) => v !== value)
+          : [...current, value];
+        return { ...prev, [fieldId]: next };
+      }
+      // single-value toggle: selecting same value clears it
+      const next = current.includes(value) ? [] : [value];
+      return { ...prev, [fieldId]: next };
+    });
+    setPage(0);
+  }
+
+  function clearFilter(fieldId: string) {
+    setActiveFilters((prev) => ({ ...prev, [fieldId]: [] }));
+    setPage(0);
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -234,21 +412,159 @@ export default function ContactsPage() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
-        <Input
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            // Reset pagination when the query changes — the result
-            // set shrinks/grows, page N may no longer be valid.
-            setPage(0);
-          }}
-          placeholder="Search by name, phone, or email..."
-          className="pl-8 bg-slate-900 border-slate-700 text-white placeholder:text-slate-500"
-        />
+      {/* Reminder tabs + search row */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900 p-0.5">
+          {(['all','today','missed','upcoming'] as ReminderTab[]).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => { setReminderTab(t); setPage(0); }}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
+                reminderTab === t
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {t.charAt(0).toUpperCase() + t.slice(1)}
+              <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] ${
+                reminderTab === t ? 'bg-white/20' : 'bg-slate-700 text-slate-400'
+              }`}>
+                {reminderCounts[t]}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
+          <Input
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(0);
+            }}
+            placeholder="Search by name, phone, email or custom fields…"
+            className="pl-8 bg-slate-900 border-slate-700 text-white placeholder:text-slate-500"
+          />
+        </div>
+
+        {filterFields.length > 0 && (
+          <Popover>
+            <PopoverTrigger
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors cursor-pointer ${
+                activeFilterCount > 0
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-slate-700 bg-slate-900 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+              }`}
+            >
+              <SlidersHorizontal className="size-3.5" />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="rounded-full bg-primary/20 px-1.5 py-0.5 text-[10px] text-primary font-semibold">
+                  {activeFilterCount}
+                </span>
+              )}
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              className="w-72 border-slate-700 bg-slate-900 p-3 space-y-3"
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Filters</p>
+                {activeFilterCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveFilters({}); setPage(0); }}
+                    className="text-[10px] text-slate-500 hover:text-slate-300 cursor-pointer"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+              {filterFields.map((f) => {
+                const selected = activeFilters[f.id] ?? [];
+                return (
+                  <div key={f.id} className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] font-medium text-slate-400">{f.field_name}</p>
+                      {selected.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => clearFilter(f.id)}
+                          className="text-[10px] text-slate-600 hover:text-slate-400 cursor-pointer flex items-center gap-0.5"
+                        >
+                          <X className="size-2.5" /> Clear
+                        </button>
+                      )}
+                    </div>
+                    {f.field_type === 'file' ? (
+                      <div className="flex gap-1.5">
+                        {(['available', 'unavailable'] as const).map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => toggleFilter(f.id, v)}
+                            className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium cursor-pointer transition-all ${
+                              selected.includes(v)
+                                ? 'bg-primary text-primary-foreground'
+                                : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                            }`}
+                          >
+                            {v === 'available' ? 'Available' : 'Not Available'}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {((f.field_options?.options ?? []) as string[]).map((opt) => (
+                          <button
+                            key={opt}
+                            type="button"
+                            onClick={() => toggleFilter(f.id, opt)}
+                            className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium cursor-pointer transition-all ${
+                              selected.includes(opt)
+                                ? 'bg-primary text-primary-foreground'
+                                : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                            }`}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </PopoverContent>
+          </Popover>
+        )}
       </div>
+
+      {/* Active filter chips */}
+      {activeFilterCount > 0 && (
+        <div className="flex flex-wrap gap-1.5 -mt-3">
+          {filterFields.map((f) => {
+            const selected = activeFilters[f.id] ?? [];
+            if (selected.length === 0) return null;
+            return selected.map((v) => (
+              <span
+                key={`${f.id}-${v}`}
+                className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-[11px] text-primary"
+              >
+                {f.field_name}: {v === 'available' ? 'Available' : v === 'unavailable' ? 'Not Available' : v}
+                <button
+                  type="button"
+                  onClick={() => toggleFilter(f.id, v)}
+                  className="hover:text-primary/70 cursor-pointer"
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+            ));
+          })}
+        </div>
+      )}
 
       {/* Table */}
       <div className="rounded-lg border border-slate-800 overflow-hidden">
@@ -260,6 +576,7 @@ export default function ContactsPage() {
               <TableHead className="text-slate-400 hidden md:table-cell">Email</TableHead>
               <TableHead className="text-slate-400 hidden lg:table-cell">Company</TableHead>
               <TableHead className="text-slate-400 hidden md:table-cell">Tags</TableHead>
+              <TableHead className="text-slate-400 hidden lg:table-cell">Assigned</TableHead>
               <TableHead className="text-slate-400 hidden lg:table-cell">Created</TableHead>
               <TableHead className="text-slate-400 w-12" />
             </TableRow>
@@ -267,7 +584,7 @@ export default function ContactsPage() {
           <TableBody>
             {loading ? (
               <TableRow className="border-slate-800">
-                <TableCell colSpan={7} className="text-center py-12">
+                <TableCell colSpan={8} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Loader2 className="size-6 animate-spin text-primary" />
                     <p className="text-sm text-slate-500">Loading contacts...</p>
@@ -276,7 +593,7 @@ export default function ContactsPage() {
               </TableRow>
             ) : contacts.length === 0 ? (
               <TableRow className="border-slate-800">
-                <TableCell colSpan={7} className="text-center py-12">
+                <TableCell colSpan={8} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Users className="size-8 text-slate-600" />
                     <p className="text-sm text-slate-500">
@@ -303,8 +620,44 @@ export default function ContactsPage() {
                   className="border-slate-800 hover:bg-slate-900/50 cursor-pointer"
                   onClick={() => openDetail(contact.id)}
                 >
-                  <TableCell className="text-white font-medium">
-                    {contact.name || <span className="text-slate-500 italic">Unnamed</span>}
+                  {/* Rich Name cell — name + company (muted) + tag chips + top-2 custom fields */}
+                  <TableCell className="py-2.5">
+                    <div className="space-y-0.5">
+                      <p className="text-white font-semibold text-sm leading-snug">
+                        {contact.name || <span className="text-slate-500 italic font-normal">Unnamed</span>}
+                      </p>
+                      {contact.company && (
+                        <p className="text-xs text-slate-500 truncate max-w-[200px]">{contact.company}</p>
+                      )}
+                      {/* Tag chips (max 2) — visible even at narrow screens where Tags col is hidden */}
+                      {contact.tags && contact.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-0.5 md:hidden">
+                          {contact.tags.slice(0, 2).map((tag) => (
+                            <span
+                              key={tag.id}
+                              className="inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                              style={{ backgroundColor: tag.color + '20', color: tag.color }}
+                            >
+                              {tag.name}
+                            </span>
+                          ))}
+                          {contact.tags.length > 2 && (
+                            <span className="text-[10px] text-slate-500 self-center">+{contact.tags.length - 2}</span>
+                          )}
+                        </div>
+                      )}
+                      {/* Top-2 custom field values */}
+                      {displayCustomFields.map((field) => {
+                        const raw = (contact.custom_data ?? {})[field.id];
+                        if (raw == null || raw === '') return null;
+                        const display = Array.isArray(raw) ? (raw as string[]).join(', ') : String(raw);
+                        return (
+                          <p key={field.id} className="text-[10px] text-slate-500 truncate max-w-[200px]">
+                            {field.field_name}: <span className="text-slate-400">{display}</span>
+                          </p>
+                        );
+                      })}
+                    </div>
                   </TableCell>
                   <TableCell className="text-slate-300 font-mono text-xs">
                     {contact.phone}
@@ -339,6 +692,21 @@ export default function ContactsPage() {
                         </span>
                       )}
                     </div>
+                  </TableCell>
+                  {/* Assigned column */}
+                  <TableCell className="hidden lg:table-cell">
+                    {contact.assigned_to && assigneesMap[contact.assigned_to] ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary">
+                          {(assigneesMap[contact.assigned_to].full_name || assigneesMap[contact.assigned_to].email || '?').charAt(0).toUpperCase()}
+                        </span>
+                        <span className="text-xs text-slate-300 truncate max-w-[100px]">
+                          {assigneesMap[contact.assigned_to].full_name || assigneesMap[contact.assigned_to].email}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-slate-600 text-xs">-</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-slate-500 text-xs hidden lg:table-cell">
                     {new Date(contact.created_at).toLocaleDateString('en-US', {

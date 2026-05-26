@@ -90,6 +90,14 @@ export function canViewSidebarItem(
   }
 }
 
+export function canManagePipelines(role: Role | string | null | undefined) {
+  return role === 'admin'
+}
+
+export function canManageCustomFields(role: Role | string | null | undefined) {
+  return role === 'admin'
+}
+
 export const ROLE_LABEL: Record<Role, string> = {
   admin: 'Admin',
   owner: 'Owner',

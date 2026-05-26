@@ -44,6 +44,10 @@ export interface Contact {
    * uses this to scope Executives to "their" contacts. Added in 013.
    */
   assigned_to?: string | null;
+  /** JSONB bag of custom field values keyed by custom_field_id. Added in 014. */
+  custom_data?: Record<string, unknown>;
+  /** Embedded contact_tags with tag relation — present when loaded via nested join. */
+  contact_tags?: Array<{ tag: Tag }>;
   created_at: string;
   updated_at: string;
 }
@@ -62,12 +66,16 @@ export interface ContactTag {
   tag_id: string;
 }
 
+export type CustomFieldType = 'text' | 'number' | 'select' | 'multi_select' | 'file';
+
 export interface CustomField {
   id: string;
   user_id: string;
   field_name: string;
-  field_type: string;
-  field_options?: Record<string, unknown>;
+  field_type: CustomFieldType;
+  field_options?: { options?: string[] } & Record<string, unknown>;
+  applies_to: 'contact' | 'deal';
+  sort_order: number;
   created_at: string;
 }
 
@@ -76,6 +84,29 @@ export interface ContactCustomValue {
   contact_id: string;
   custom_field_id: string;
   value?: string;
+}
+
+export type FollowupChannel = 'whatsapp' | 'call' | 'email' | 'meeting' | 'other';
+export type DealReminderType = 'followup' | 'call' | 'meeting' | 'other';
+
+export interface DealFollowup {
+  id: string;
+  deal_id: string;
+  channel: FollowupChannel;
+  note: string;
+  created_by: string;
+  created_at: string;
+  creator?: Profile;
+}
+
+export interface ContactFollowup {
+  id: string;
+  contact_id: string;
+  channel: FollowupChannel;
+  note: string;
+  created_by: string;
+  created_at: string;
+  creator?: Profile;
 }
 
 export interface ContactNote {
@@ -211,6 +242,13 @@ export interface Deal {
   notes?: string;
   expected_close_date?: string;
   status?: DealStatus;
+  /** Active reminder fields — auto-seeded by DB trigger on open deal insert. Added in 014. */
+  reminder_type?: DealReminderType;
+  reminder_at?: string;
+  reminder_note?: string;
+  reminder_updated_at?: string;
+  /** JSONB bag of custom field values keyed by custom_field_id. Added in 014. */
+  custom_data?: Record<string, unknown>;
   created_at: string;
   updated_at?: string;
   contact?: Contact;

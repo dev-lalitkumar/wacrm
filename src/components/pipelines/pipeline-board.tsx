@@ -14,7 +14,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import type { Deal, PipelineStage } from "@/types";
+import type { Deal, PipelineStage, CustomField } from "@/types";
 import { DealCard } from "./deal-card";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
@@ -25,6 +25,7 @@ interface PipelineBoardProps {
   onDealMoved: (dealId: string, newStageId: string) => void;
   onAddDeal: (stageId: string) => void;
   onEditDeal: (deal: Deal) => void;
+  customFields?: CustomField[];
 }
 
 function formatCurrency(value: number) {
@@ -42,6 +43,7 @@ export function PipelineBoard({
   onDealMoved,
   onAddDeal,
   onEditDeal,
+  customFields,
 }: PipelineBoardProps) {
   const [activeDealId, setActiveDealId] = useState<string | null>(null);
 
@@ -61,10 +63,7 @@ export function PipelineBoard({
   }, [sortedStages, deals]);
 
   const sensors = useSensors(
-    // 5px activation distance avoids clicks being interpreted as drags.
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    // Keyboard drag support: focus a card, Space to pick up, arrows to move,
-    // Space to drop, Escape to cancel.
     useSensor(KeyboardSensor),
   );
 
@@ -102,10 +101,6 @@ export function PipelineBoard({
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      {/* snap-x + snap-mandatory on mobile so swipes land the next
-          stage cleanly at the viewport edge instead of mid-column.
-          Disabled on lg+ because the full board fits without scroll
-          there and snapping would interfere with the natural layout. */}
       <div className="pipeline-scroll flex snap-x snap-mandatory gap-3 overflow-x-auto pb-4 lg:snap-none">
         {sortedStages.map((stage) => {
           const stageDeals = dealsByStage.get(stage.id) ?? [];
@@ -121,6 +116,7 @@ export function PipelineBoard({
               totalValue={totalValue}
               onAddDeal={onAddDeal}
               onEditDeal={onEditDeal}
+              customFields={customFields}
             />
           );
         })}
@@ -141,6 +137,7 @@ export function PipelineBoard({
               }
               onEdit={() => {}}
               isOverlay
+              customFields={customFields}
             />
           </div>
         ) : null}
@@ -170,24 +167,19 @@ function StageColumn({
   totalValue,
   onAddDeal,
   onEditDeal,
+  customFields,
 }: {
   stage: PipelineStage;
   deals: Deal[];
   totalValue: number;
   onAddDeal: (stageId: string) => void;
   onEditDeal: (deal: Deal) => void;
+  customFields?: CustomField[];
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
 
   return (
-    // On mobile each column is `w-[85vw]` (with a reasonable min/max)
-    // so the next column's edge peeks in — a "there's more here" hint.
-    // snap-start lands each column cleanly when swiping. On lg+ we
-    // restore the flex-1 share-the-row behavior. The droppable ref is
-    // on the inner messages region below — intentionally NOT here, so
-    // a drag over the column header doesn't highlight the whole column.
     <div className="flex w-[85vw] min-w-[260px] max-w-[320px] shrink-0 snap-start flex-col rounded-xl border border-slate-800 bg-slate-900/60 p-4 lg:w-auto lg:max-w-none lg:flex-1 lg:basis-[260px] lg:shrink lg:snap-none">
-      {/* 3px colored top border — sits above the column's padding */}
       <div
         className="-mx-4 -mt-4 h-[3px] rounded-t-xl"
         style={{ backgroundColor: stage.color }}
@@ -221,6 +213,7 @@ function StageColumn({
               deal={deal}
               stage={stage}
               onEdit={onEditDeal}
+              customFields={customFields}
             />
           ))
         )}
@@ -243,10 +236,12 @@ function DraggableDealCard({
   deal,
   stage,
   onEdit,
+  customFields,
 }: {
   deal: Deal;
   stage: PipelineStage;
   onEdit: (deal: Deal) => void;
+  customFields?: CustomField[];
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: deal.id,
@@ -259,7 +254,7 @@ function DraggableDealCard({
       {...attributes}
       style={{ opacity: isDragging ? 0.3 : 1, touchAction: "none" }}
     >
-      <DealCard deal={deal} stage={stage} onEdit={onEdit} />
+      <DealCard deal={deal} stage={stage} onEdit={onEdit} customFields={customFields} />
     </div>
   );
 }
