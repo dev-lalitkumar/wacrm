@@ -68,7 +68,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      data-theme={DEFAULT_THEME}
+      suppressHydrationWarning
       className={`${inter.variable} h-full antialiased`}
     >
       <head>

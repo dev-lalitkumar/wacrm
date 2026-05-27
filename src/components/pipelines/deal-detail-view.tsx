@@ -19,8 +19,6 @@ import {
   X,
   Loader2,
   Bell,
-  ChevronDown,
-  ChevronUp,
   Trash2,
   Calendar,
   DollarSign,
@@ -34,6 +32,8 @@ import { timeAgo } from "@/lib/utils";
 import { ActivityHistory } from "@/components/shared/activity-history";
 import { ContactInfoCard } from "@/components/shared/contact-info-card";
 import { QuickFollowup } from "@/components/shared/quick-followup";
+import { SourceSelect } from "@/components/shared/source-select";
+import { CollapsibleSection } from "@/components/shared/collapsible-section";
 import { DealReminderSection } from "./deal-reminder-section";
 
 interface DealDetailViewProps {
@@ -157,6 +157,7 @@ export function DealDetailView({
   const [formAssignedTo, setFormAssignedTo] = useState("");
   const [formCloseDate, setFormCloseDate] = useState("");
   const [formNotes, setFormNotes] = useState("");
+  const [formSourceId, setFormSourceId] = useState<string | null>(null);
   const [formDealCustomData, setFormDealCustomData] = useState<Record<string, unknown>>({});
   const [formContactName, setFormContactName] = useState("");
   const [formContactPhone, setFormContactPhone] = useState("");
@@ -174,7 +175,7 @@ export function DealDetailView({
         supabase
           .from("deals")
           .select(
-            "*, contact:contacts(*, contact_tags(tag:tags(*))), assignee:profiles!deals_assigned_to_fkey(id, full_name, email), stage:pipeline_stages(*)"
+            "*, contact:contacts(*, contact_tags(tag:tags(*)), source:sources(id, name, key)), assignee:profiles!deals_assigned_to_fkey(id, full_name, email), stage:pipeline_stages(*), source:sources(id, name, key)"
           )
           .eq("id", dealId)
           .single(),
@@ -248,12 +249,17 @@ export function DealDetailView({
 
   useEffect(() => {
     if (open && dealId) {
+      // Resetting accordion + delete-confirm + draft note on every
+      // open is intentional UI sync, not external state — the lint
+      // rule's "external systems" guidance doesn't apply.
+      /* eslint-disable react-hooks/set-state-in-effect */
       setFollowupOpen(false);
       setReminderOpen(false);
       setNoteOpen(false);
       setTagsOpen(false);
       setNewNote("");
       setConfirmDelete(false);
+      /* eslint-enable react-hooks/set-state-in-effect */
       fetchAll();
     }
   }, [open, dealId, fetchAll]);
@@ -269,6 +275,7 @@ export function DealDetailView({
     setFormAssignedTo(deal.assigned_to ?? "");
     setFormCloseDate(deal.expected_close_date ?? "");
     setFormNotes(deal.notes ?? "");
+    setFormSourceId(deal.source_id ?? null);
     setFormDealCustomData((deal.custom_data ?? {}) as Record<string, unknown>);
     if (deal.contact) {
       setFormContactName(deal.contact.name ?? "");
@@ -323,6 +330,7 @@ export function DealDetailView({
         assigned_to: formAssignedTo || null,
         expected_close_date: formCloseDate || null,
         notes: formNotes.trim() || null,
+        source_id: formSourceId || null,
         custom_data: formDealCustomData,
       })
       .eq("id", deal.id);
@@ -467,7 +475,7 @@ export function DealDetailView({
   const noteSummary = lastNote ? (
     <span className="flex items-center gap-1.5">
       <span className="text-slate-400 truncate max-w-[160px]">
-        "{lastNote.note_text.slice(0, 45)}{lastNote.note_text.length > 45 ? "…" : ""}"
+        &ldquo;{lastNote.note_text.slice(0, 45)}{lastNote.note_text.length > 45 ? "…" : ""}&rdquo;
       </span>
       <span className="text-slate-500 shrink-0">{timeAgo(lastNote.created_at)}</span>
     </span>
@@ -495,47 +503,6 @@ export function DealDetailView({
   ) : (
     <span className="text-slate-600">No tags</span>
   );
-
-  // ─── CollapsibleSection helper ─────────────────────────────────────────────
-  function CollapsibleSection({
-    title,
-    icon,
-    summary,
-    open: sectionOpen,
-    onToggle,
-    children,
-  }: {
-    title: string;
-    icon?: React.ReactNode;
-    summary: React.ReactNode;
-    open: boolean;
-    onToggle: () => void;
-    children: React.ReactNode;
-  }) {
-    return (
-      <div className="rounded-lg border border-slate-700/60 bg-slate-800/40 overflow-hidden">
-        <button
-          type="button"
-          onClick={onToggle}
-          className="flex w-full items-center gap-2 px-3 py-2.5 text-left cursor-pointer"
-        >
-          {icon && <span className="shrink-0 text-slate-400">{icon}</span>}
-          <span className="text-xs font-semibold text-slate-300 w-[68px] shrink-0">{title}</span>
-          {!sectionOpen && (
-            <span className="flex-1 min-w-0 text-[11px] truncate">{summary}</span>
-          )}
-          {sectionOpen ? (
-            <ChevronUp className="ml-auto size-3.5 text-slate-500 shrink-0" />
-          ) : (
-            <ChevronDown className="ml-auto size-3.5 text-slate-500 shrink-0" />
-          )}
-        </button>
-        {sectionOpen && (
-          <div className="px-3 pb-3 pt-2 border-t border-slate-700/40">{children}</div>
-        )}
-      </div>
-    );
-  }
 
   // ─── Custom field input helpers ─────────────────────────────────────────────
   function setDealField(fieldId: string, val: unknown) {
@@ -735,6 +702,14 @@ export function DealDetailView({
                       {deal.status ?? "open"}
                     </p>
                   </div>
+                  {deal.source && (
+                    <div>
+                      <p className="text-[11px] text-slate-500 mb-0.5">Source</p>
+                      <span className="inline-flex items-center rounded-full bg-slate-700/60 px-2 py-0.5 text-[10px] font-medium text-slate-200">
+                        {deal.source.name}
+                      </span>
+                    </div>
+                  )}
                   {/* Deal custom fields — same grid rhythm */}
                   {dealCustomFields.map((field) => {
                     const raw = (deal.custom_data ?? {})[field.id];
@@ -1066,6 +1041,11 @@ export function DealDetailView({
                       placeholder="Add notes…"
                       className="min-h-[80px] border-slate-700 bg-slate-800 text-white"
                     />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label className="text-slate-300 text-xs">Source</Label>
+                    <SourceSelect value={formSourceId} onChange={setFormSourceId} />
                   </div>
 
                   {/* Deal custom fields — visually identical to standard fields above */}

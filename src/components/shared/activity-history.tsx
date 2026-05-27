@@ -97,9 +97,13 @@ export function ActivityHistory({ entityType, entityId }: ActivityHistoryProps) 
   }, [supabase, entityType, entityId]);
 
   useEffect(() => {
+    // Reset list + cursor whenever the entity changes — these are
+    // intentional UI resets, not state we're syncing from an external
+    // system, so the rule's guidance doesn't apply.
+    /* eslint-disable react-hooks/set-state-in-effect */
     setEntries([]);
     setPage(0);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    /* eslint-enable react-hooks/set-state-in-effect */
     fetchEntries(0);
   }, [fetchEntries]);
 

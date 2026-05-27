@@ -1,7 +1,7 @@
 "use client";
 
 import type { Contact, Tag, CustomField, Profile } from "@/types";
-import { Phone, Mail, Building2, User } from "lucide-react";
+import { Phone, Mail, Building2, User, Tag as TagIcon } from "lucide-react";
 
 interface ContactInfoCardProps {
   contact: Contact & { tags?: Tag[] };
@@ -64,6 +64,16 @@ export function ContactInfoCard({ contact, customFields, assignee }: ContactInfo
             {assignee ? (assignee.full_name || assignee.email) : "—"}
           </p>
         </div>
+        {contact.source && (
+          <div>
+            <p className="flex items-center gap-1 text-[11px] text-slate-500 mb-0.5">
+              <TagIcon className="size-2.5" /> Source
+            </p>
+            <span className="inline-flex items-center rounded-full bg-slate-700/60 px-2 py-0.5 text-[10px] font-medium text-slate-200">
+              {contact.source.name}
+            </span>
+          </div>
+        )}
 
         {/* Custom fields — identical visual rhythm to standard fields */}
         {customFields.map((field) => {

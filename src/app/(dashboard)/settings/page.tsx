@@ -9,6 +9,7 @@ import {
   Palette,
   Users,
   LayoutList,
+  Webhook as WebhookIcon,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
@@ -20,13 +21,21 @@ import { SessionsCard } from '@/components/settings/sessions-card';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { TeamManager } from '@/components/settings/team-manager';
 import { CustomFieldsManager } from '@/components/settings/custom-fields-manager';
+import { SourcesManager } from '@/components/settings/sources-manager';
+import { IntegrationsManager } from '@/components/settings/integrations-manager';
 import { useAuth } from '@/hooks/use-auth';
-import { canManageTeam, canManageCustomFields } from '@/lib/auth/permissions';
+import {
+  canManageTeam,
+  canManageCustomFields,
+  canViewWebhooks,
+} from '@/lib/auth/permissions';
 
 const TAB_VALUES = [
   'profile',
   'team',
   'custom-fields',
+  'sources',
+  'integrations',
   'whatsapp',
   'templates',
   'tags',
@@ -44,6 +53,9 @@ export default function SettingsPage() {
   const { profile } = useAuth();
   const showTeam = canManageTeam(profile?.role ?? null);
   const showCustomFields = canManageCustomFields(profile?.role ?? null);
+  // Sources tab is visible to everyone (read-only for non-admins).
+  // Integrations tab is admin/owner/manager only.
+  const showIntegrations = canViewWebhooks(profile?.role ?? null);
 
   // The URL is the single source of truth for the active tab — no
   // local state, no sync effect. A previous revision duplicated this
@@ -57,6 +69,9 @@ export default function SettingsPage() {
     tab = 'profile';
   }
   if (tab === 'custom-fields' && !showCustomFields) {
+    tab = 'profile';
+  }
+  if (tab === 'integrations' && !showIntegrations) {
     tab = 'profile';
   }
 
@@ -104,6 +119,22 @@ export default function SettingsPage() {
             </TabsTrigger>
           )}
           <TabsTrigger
+            value="sources"
+            className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
+          >
+            <Tag className="size-4" />
+            Sources
+          </TabsTrigger>
+          {showIntegrations && (
+            <TabsTrigger
+              value="integrations"
+              className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
+            >
+              <WebhookIcon className="size-4" />
+              Integrations
+            </TabsTrigger>
+          )}
+          <TabsTrigger
             value="whatsapp"
             className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
           >
@@ -148,6 +179,16 @@ export default function SettingsPage() {
         {showCustomFields && (
           <TabsContent value="custom-fields" className="space-y-6">
             <CustomFieldsManager />
+          </TabsContent>
+        )}
+
+        <TabsContent value="sources" className="space-y-6">
+          <SourcesManager />
+        </TabsContent>
+
+        {showIntegrations && (
+          <TabsContent value="integrations" className="space-y-6">
+            <IntegrationsManager />
           </TabsContent>
         )}
 

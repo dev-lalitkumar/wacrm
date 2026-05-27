@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { MessageSquare, DollarSign } from "lucide-react";
 import { toast } from "sonner";
+import { SourceSelect } from "@/components/shared/source-select";
 
 interface DealFormProps {
   open: boolean;
@@ -45,6 +46,7 @@ export function DealForm({
   const [assignedTo, setAssignedTo] = useState("");
   const [expectedCloseDate, setExpectedCloseDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [sourceId, setSourceId] = useState<string | null>(null);
 
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -65,6 +67,7 @@ export function DealForm({
     setAssignedTo("");
     setExpectedCloseDate("");
     setNotes("");
+    setSourceId(null);
   }, [open, defaultStageId, stages]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -139,6 +142,7 @@ export function DealForm({
         assigned_to: assignedTo || null,
         notes: notes.trim() || null,
         expected_close_date: expectedCloseDate || null,
+        source_id: sourceId || null,
         user_id: user.id,
         status: "open",
       })
@@ -274,6 +278,11 @@ export function DealForm({
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label className="text-slate-300">Source</Label>
+              <SourceSelect value={sourceId} onChange={setSourceId} />
             </div>
 
             <div className="grid gap-2">

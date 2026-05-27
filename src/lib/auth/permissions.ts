@@ -98,6 +98,29 @@ export function canManageCustomFields(role: Role | string | null | undefined) {
   return role === 'admin'
 }
 
+// ── Integrations (migration 015) ───────────────────────────────
+//
+// Admin: full CRUD on webhooks + sources + global round-robin.
+// Owner: view webhooks + reveal/copy secret; view sources read-only.
+// Manager: view webhooks (no secret); view sources read-only.
+// Executive: no access — Integrations tab is hidden.
+
+export function canManageWebhooks(role: Role | string | null | undefined) {
+  return role === 'admin'
+}
+
+export function canViewWebhooks(role: Role | string | null | undefined) {
+  return role === 'admin' || role === 'owner' || role === 'manager'
+}
+
+export function canRevealWebhookSecret(role: Role | string | null | undefined) {
+  return role === 'admin' || role === 'owner'
+}
+
+export function canManageSources(role: Role | string | null | undefined) {
+  return role === 'admin'
+}
+
 export const ROLE_LABEL: Record<Role, string> = {
   admin: 'Admin',
   owner: 'Owner',

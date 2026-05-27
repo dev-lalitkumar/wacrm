@@ -9,6 +9,8 @@ import type { Contact, Tag, CustomField, Profile } from '@/types';
 import { QuickFollowup } from '@/components/shared/quick-followup';
 import { ActivityHistory } from '@/components/shared/activity-history';
 import { ContactInfoCard } from '@/components/shared/contact-info-card';
+import { SourceSelect } from '@/components/shared/source-select';
+import { CollapsibleSection } from '@/components/shared/collapsible-section';
 import {
   Sheet,
   SheetContent,
@@ -26,8 +28,6 @@ import {
   Mail,
   Check,
   Loader2,
-  ChevronDown,
-  ChevronUp,
   StickyNote,
   Tag as TagIcon,
 } from 'lucide-react';
@@ -65,6 +65,7 @@ export function ContactDetailView({
   const [editEmail, setEditEmail] = useState('');
   const [editCompany, setEditCompany] = useState('');
   const [editAssignedTo, setEditAssignedTo] = useState('');
+  const [editSourceId, setEditSourceId] = useState<string | null>(null);
   const [editCustomData, setEditCustomData] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
 
@@ -99,7 +100,11 @@ export function ContactDetailView({
 
     const [contactRes, tagsRes, contactTagsRes, customFieldsRes, profilesRes, lastFollowupRes, lastNoteRes] =
       await Promise.all([
-        supabase.from('contacts').select('*').eq('id', contactId).single(),
+        supabase
+          .from('contacts')
+          .select('*, source:sources(id, name, key)')
+          .eq('id', contactId)
+          .single(),
         supabase.from('tags').select('*').order('name'),
         supabase.from('contact_tags').select('tag_id').eq('contact_id', contactId),
         supabase
@@ -148,6 +153,7 @@ export function ContactDetailView({
       setEditEmail(c.email ?? '');
       setEditCompany(c.company ?? '');
       setEditAssignedTo(c.assigned_to ?? '');
+      setEditSourceId(c.source_id ?? null);
       setEditCustomData((c.custom_data ?? {}) as Record<string, unknown>);
     }
 
@@ -156,10 +162,15 @@ export function ContactDetailView({
 
   useEffect(() => {
     if (open && contactId) {
+      // Resetting accordion state + form drafts on open is intentional
+      // synchronous setState here — these are local UI bits that key
+      // off the open transition, not external state we're syncing.
+      /* eslint-disable react-hooks/set-state-in-effect */
       setFollowupOpen(false);
       setNoteOpen(false);
       setTagsOpen(false);
       setNewNote('');
+      /* eslint-enable react-hooks/set-state-in-effect */
       fetchAll();
     }
   }, [open, contactId, fetchAll]);
@@ -233,6 +244,7 @@ export function ContactDetailView({
       phone: editPhone.trim(),
       email: editEmail.trim() || null,
       company: editCompany.trim() || null,
+      source_id: editSourceId || null,
       custom_data: editCustomData,
       updated_at: new Date().toISOString(),
     };
@@ -404,47 +416,6 @@ export function ContactDetailView({
   ) : (
     <span className="text-slate-600">No tags</span>
   );
-
-  // ─── CollapsibleSection helper ────────────────────────────────────────────
-  function CollapsibleSection({
-    title,
-    icon,
-    summary,
-    open: sectionOpen,
-    onToggle,
-    children,
-  }: {
-    title: string;
-    icon?: React.ReactNode;
-    summary: React.ReactNode;
-    open: boolean;
-    onToggle: () => void;
-    children: React.ReactNode;
-  }) {
-    return (
-      <div className="rounded-lg border border-slate-700/60 bg-slate-800/40 overflow-hidden">
-        <button
-          type="button"
-          onClick={onToggle}
-          className="flex w-full items-center gap-2 px-3 py-2.5 text-left cursor-pointer"
-        >
-          {icon && <span className="shrink-0 text-slate-400">{icon}</span>}
-          <span className="text-xs font-semibold text-slate-300 w-[68px] shrink-0">{title}</span>
-          {!sectionOpen && (
-            <span className="flex-1 min-w-0 text-[11px] truncate">{summary}</span>
-          )}
-          {sectionOpen ? (
-            <ChevronUp className="ml-auto size-3.5 text-slate-500 shrink-0" />
-          ) : (
-            <ChevronDown className="ml-auto size-3.5 text-slate-500 shrink-0" />
-          )}
-        </button>
-        {sectionOpen && (
-          <div className="px-3 pb-3 pt-2 border-t border-slate-700/40">{children}</div>
-        )}
-      </div>
-    );
-  }
 
   // ─── Render ───────────────────────────────────────────────────────────────────
   return (
@@ -679,6 +650,11 @@ export function ContactDetailView({
                     onChange={(e) => setEditCompany(e.target.value)}
                     className="border-slate-700 bg-slate-800 text-white"
                   />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label className="text-slate-300 text-xs">Source</Label>
+                  <SourceSelect value={editSourceId} onChange={setEditSourceId} />
                 </div>
 
                 {canAssign && (

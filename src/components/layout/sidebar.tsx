@@ -1,12 +1,12 @@
-"use client";
+'use client';
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect } from "react";
-import { cn } from "@/lib/utils";
-import { useAuth } from "@/hooks/use-auth";
-import { useTotalUnread } from "@/hooks/use-total-unread";
-import { canViewSidebarItem, ROLE_LABEL } from "@/lib/auth/permissions";
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useEffect } from 'react';
+import { cn } from '@/lib/utils';
+import { useAuth } from '@/hooks/use-auth';
+import { useTotalUnread } from '@/hooks/use-total-unread';
+import { canViewSidebarItem, ROLE_LABEL } from '@/lib/auth/permissions';
 import {
   LayoutDashboard,
   MessageSquare,
@@ -19,19 +19,15 @@ import {
   LogOut,
   User,
   X,
-} from "lucide-react";
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@/components/ui/avatar";
+} from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from '@/components/ui/dropdown-menu';
 
 interface NavItem {
   href: string;
@@ -47,37 +43,37 @@ interface NavItem {
    * roles for which `canViewSidebarItem(slot, role)` is true. Items
    * without a slot are visible to every signed-in user.
    */
-  permission?: "broadcasts" | "automations" | "flows";
+  permission?: 'broadcasts' | 'automations' | 'flows';
 }
 
 const navItems: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/inbox", label: "Inbox", icon: MessageSquare },
-  { href: "/contacts", label: "Contacts", icon: Users },
-  { href: "/pipelines", label: "Pipelines", icon: GitBranch },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/inbox', label: 'Inbox', icon: MessageSquare },
+  { href: '/contacts', label: 'Contacts', icon: Users },
+  { href: '/pipelines', label: 'Pipelines', icon: GitBranch },
   {
-    href: "/broadcasts",
-    label: "Broadcasts",
+    href: '/broadcasts',
+    label: 'Broadcasts',
     icon: Radio,
-    permission: "broadcasts",
+    permission: 'broadcasts',
   },
   {
-    href: "/automations",
-    label: "Automations",
+    href: '/automations',
+    label: 'Automations',
     icon: Zap,
-    permission: "automations",
+    permission: 'automations',
   },
   {
-    href: "/flows",
-    label: "Flows",
+    href: '/flows',
+    label: 'Flows',
     icon: Workflow,
     beta: true,
-    permission: "flows",
+    permission: 'flows',
   },
 ];
 
 const bottomNavItems = [
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
 interface SidebarProps {
@@ -104,14 +100,14 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    document.body.style.overflow = 'hidden';
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose?.();
+      if (e.key === 'Escape') onClose?.();
     };
-    window.addEventListener("keydown", onKey);
+    window.addEventListener('keydown', onKey);
     return () => {
       document.body.style.overflow = prev;
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener('keydown', onKey);
     };
   }, [open, onClose]);
 
@@ -125,21 +121,21 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         aria-label="Close menu"
         onClick={onClose}
         className={cn(
-          "fixed inset-0 z-30 bg-slate-950/70 backdrop-blur-sm transition-opacity lg:hidden",
+          'fixed inset-0 z-30 bg-slate-950/70 backdrop-blur-sm transition-opacity lg:hidden',
           open
-            ? "pointer-events-auto opacity-100"
-            : "pointer-events-none opacity-0",
+            ? 'pointer-events-auto opacity-100'
+            : 'pointer-events-none opacity-0'
         )}
       />
 
       <aside
         className={cn(
           // Mobile: fixed drawer that slides in from the left.
-          "fixed inset-y-0 left-0 z-40 flex h-full w-64 flex-col border-r border-slate-800 bg-slate-900",
-          "transition-transform duration-200 ease-out will-change-transform",
-          open ? "translate-x-0" : "-translate-x-full",
+          'fixed inset-y-0 left-0 z-40 flex h-full w-64 flex-col border-r border-slate-800 bg-slate-900',
+          'transition-transform duration-200 ease-out will-change-transform',
+          open ? 'translate-x-0' : '-translate-x-full',
           // Desktop: static, always visible — reset all the mobile framing.
-          "lg:static lg:z-0 lg:w-60 lg:translate-x-0 lg:transition-none",
+          'lg:static lg:z-0 lg:w-60 lg:translate-x-0 lg:transition-none'
         )}
         aria-label="Primary"
       >
@@ -147,12 +143,10 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             close button is hidden since the sidebar is always-visible. */}
         <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-slate-800 px-4">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <div className="bg-primary text-primary-foreground flex h-8 w-8 items-center justify-center rounded-lg">
               <MessageSquare className="h-4 w-4" />
             </div>
-            <span className="text-sm font-semibold text-white">
-              CRM Template for WhatsApp
-            </span>
+            <span className="text-sm font-semibold text-white">Wulk CRM</span>
           </Link>
           <button
             type="button"
@@ -178,10 +172,10 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
 
               const isActive =
                 pathname === item.href ||
-                (item.href !== "/dashboard" && pathname.startsWith(item.href));
+                (item.href !== '/dashboard' && pathname.startsWith(item.href));
 
               const showUnreadDot =
-                item.href === "/inbox" && totalUnread > 0 && !isActive;
+                item.href === '/inbox' && totalUnread > 0 && !isActive;
 
               return (
                 <li key={item.href}>
@@ -189,10 +183,10 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                     href={item.href}
                     className={cn(
                       // Taller on mobile so fingers can hit the row reliably (≥44px).
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
+                      'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2',
                       isActive
-                        ? "bg-primary/10 text-primary"
-                        : "text-slate-400 hover:bg-slate-800 hover:text-white",
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-slate-400 hover:bg-slate-800 hover:text-white'
                     )}
                   >
                     <item.icon className="h-4 w-4" />
@@ -200,18 +194,18 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                     {item.beta && (
                       <span
                         aria-label="Beta feature"
-                        className="rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-300"
+                        className="rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold tracking-wider text-amber-300 uppercase"
                       >
                         Beta
                       </span>
                     )}
                     {showUnreadDot && (
                       <span
-                        aria-label={`${totalUnread} unread conversation${totalUnread === 1 ? "" : "s"}`}
+                        aria-label={`${totalUnread} unread conversation${totalUnread === 1 ? '' : 's'}`}
                         className="relative flex h-2 w-2"
                       >
-                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                        <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+                        <span className="bg-primary absolute inline-flex h-full w-full animate-ping rounded-full opacity-75" />
+                        <span className="bg-primary relative inline-flex h-2 w-2 rounded-full" />
                       </span>
                     )}
                   </Link>
@@ -230,10 +224,10 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                   <Link
                     href={item.href}
                     className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
+                      'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2',
                       isActive
-                        ? "bg-primary/10 text-primary"
-                        : "text-slate-400 hover:bg-slate-800 hover:text-white",
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-slate-400 hover:bg-slate-800 hover:text-white'
                     )}
                   >
                     <item.icon className="h-4 w-4" />
@@ -253,23 +247,23 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                 {profile?.avatar_url ? (
                   <AvatarImage
                     src={profile.avatar_url}
-                    alt={profile.full_name ?? "Avatar"}
+                    alt={profile.full_name ?? 'Avatar'}
                   />
                 ) : null}
-                <AvatarFallback className="bg-primary/10 text-sm font-medium text-primary">
+                <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
                   {profile?.full_name?.charAt(0)?.toUpperCase() ??
                     profile?.email?.charAt(0)?.toUpperCase() ??
-                    "U"}
+                    'U'}
                 </AvatarFallback>
               </Avatar>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <p className="truncate text-sm font-medium text-white">
-                    {profile?.full_name ?? "User"}
+                    {profile?.full_name ?? 'User'}
                   </p>
                   {profile?.role && (
                     <span
-                      className="shrink-0 rounded-full border border-slate-700 bg-slate-800/70 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-300"
+                      className="shrink-0 rounded-full border border-slate-700 bg-slate-800/70 px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-slate-300 uppercase"
                       aria-label={`Role: ${ROLE_LABEL[profile.role]}`}
                     >
                       {ROLE_LABEL[profile.role]}
@@ -277,7 +271,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                   )}
                 </div>
                 <p className="truncate text-xs text-slate-400">
-                  {profile?.email ?? ""}
+                  {profile?.email ?? ''}
                 </p>
               </div>
             </DropdownMenuTrigger>

@@ -46,6 +46,10 @@ export interface Contact {
   assigned_to?: string | null;
   /** JSONB bag of custom field values keyed by custom_field_id. Added in 014. */
   custom_data?: Record<string, unknown>;
+  /** FK to sources.id — backfilled to Direct on migration 015. */
+  source_id?: string | null;
+  /** Embedded source row when loaded via nested join. */
+  source?: Source;
   /** Embedded contact_tags with tag relation — present when loaded via nested join. */
   contact_tags?: Array<{ tag: Tag }>;
   created_at: string;
@@ -249,6 +253,10 @@ export interface Deal {
   reminder_updated_at?: string;
   /** JSONB bag of custom field values keyed by custom_field_id. Added in 014. */
   custom_data?: Record<string, unknown>;
+  /** FK to sources.id — backfilled to Direct on migration 015. */
+  source_id?: string | null;
+  /** Embedded source row when loaded via nested join. */
+  source?: Source;
   created_at: string;
   updated_at?: string;
   contact?: Contact;
@@ -466,4 +474,102 @@ export interface AutomationLog {
   error_message?: string | null;
   created_at: string;
   contact?: Contact;
+}
+
+// ============================================================
+// Integrations — Sources + Webhooks (migration 015)
+// ============================================================
+
+export interface Source {
+  id: string;
+  name: string;
+  /** Machine-friendly slug; immutable for system rows. */
+  key: string;
+  /** True for Direct + WhatsApp; cannot be deleted or have key/flag changed. */
+  is_system: boolean;
+  sort_order: number;
+  created_by?: string | null;
+  created_at: string;
+}
+
+export interface RoundRobinConfig {
+  id: number;
+  enabled: boolean;
+  /** Profile IDs in the rotation. */
+  member_ids: string[];
+  /** Rotation cursor; -1 means next pick will be index 0. */
+  last_index: number;
+  updated_by?: string | null;
+  updated_at: string;
+}
+
+/**
+ * Field mapping shape stored on `webhooks.field_mappings`.
+ *
+ * Keys under `contact`:
+ *   - "name" | "phone" | "email" | "company"  → standard contact columns
+ *   - "cf:<custom_field_id>"                  → contact custom_data slot
+ * Keys under `deal`:
+ *   - "title" | "value" | "notes" | "expected_close_date" → standard deal columns
+ *   - "cf:<custom_field_id>"                              → deal custom_data slot
+ *
+ * Values are dot-notation paths into the incoming JSON payload
+ * (e.g. "fields.full_name" → payload.fields.full_name). Blank/empty
+ * mapping values are stripped on save.
+ */
+export interface WebhookFieldMappings {
+  contact?: Record<string, string>;
+  deal?: Record<string, string>;
+}
+
+export type WebhookRequestStatus =
+  | 'ok'
+  | 'rate_limited'
+  | 'invalid_secret'
+  | 'bad_payload'
+  | 'disabled'
+  | 'error';
+
+export interface Webhook {
+  id: string;
+  name: string;
+  source_id: string;
+  /** AES-GCM ciphertext of the raw secret; never sent to the browser. */
+  secret_encrypted: string;
+  /** First 8 chars of raw secret, safe to display alongside masked tail. */
+  secret_prefix: string;
+  is_active: boolean;
+
+  creates_deal: boolean;
+  pipeline_id?: string | null;
+  stage_id?: string | null;
+
+  field_mappings: WebhookFieldMappings;
+
+  round_robin_override: boolean;
+  round_robin_member_ids: string[];
+  round_robin_last_index: number;
+
+  rate_limit_per_minute: number;
+
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+
+  /** Embedded when loaded via nested join. */
+  source?: Source;
+  pipeline?: Pipeline;
+  stage?: PipelineStage;
+}
+
+export interface WebhookRequest {
+  id: string;
+  webhook_id: string;
+  received_at: string;
+  ip_address?: string | null;
+  status: WebhookRequestStatus;
+  error_message?: string | null;
+  payload_preview?: string | null;
+  created_contact_id?: string | null;
+  created_deal_id?: string | null;
 }

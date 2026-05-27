@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/hooks/use-auth';
 import { canAssignContacts } from '@/lib/auth/permissions';
 import type { Contact, Tag, ContactTag, Profile } from '@/types';
+import { SourceSelect } from '@/components/shared/source-select';
 import {
   Dialog,
   DialogContent,
@@ -45,6 +46,7 @@ export function ContactForm({
   const [email, setEmail] = useState('');
   const [company, setCompany] = useState('');
   const [assignedTo, setAssignedTo] = useState('');
+  const [sourceId, setSourceId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const [tags, setTags] = useState<Tag[]>([]);
@@ -60,6 +62,7 @@ export function ContactForm({
       setEmail(contact?.email ?? '');
       setCompany(contact?.company ?? '');
       setAssignedTo(contact?.assigned_to ?? '');
+      setSourceId(contact?.source_id ?? null);
       setSelectedTagIds(contactTags.map((ct) => ct.tag_id));
       fetchTags();
       if (canAssign) fetchProfiles();
@@ -124,6 +127,7 @@ export function ContactForm({
           phone: phone.trim(),
           email: email.trim() || null,
           company: company.trim() || null,
+          source_id: sourceId || null,
           updated_at: new Date().toISOString(),
         };
         // Only roles that can reassign send `assigned_to`. Sending it
@@ -144,6 +148,7 @@ export function ContactForm({
           phone: phone.trim(),
           email: email.trim() || null,
           company: company.trim() || null,
+          source_id: sourceId || null,
         };
         if (canAssign && assignedTo) {
           insertPayload.assigned_to = assignedTo;
@@ -256,6 +261,13 @@ export function ContactForm({
               placeholder="Acme Inc."
               className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="cf-source" className="text-slate-300">
+              Source
+            </Label>
+            <SourceSelect value={sourceId} onChange={setSourceId} />
           </div>
 
           {canAssign && (
