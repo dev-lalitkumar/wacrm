@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
+import { useCompany } from '@/hooks/use-company';
 import { useTotalUnread } from '@/hooks/use-total-unread';
 import { canViewSidebarItem, ROLE_LABEL } from '@/lib/auth/permissions';
 import {
@@ -87,6 +88,7 @@ interface SidebarProps {
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { profile, signOut } = useAuth();
+  const { company } = useCompany();
   const totalUnread = useTotalUnread();
 
   // Close the drawer when route changes — users opened it to navigate,
@@ -144,11 +146,22 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         {/* Logo row. On mobile we put a close button here; on desktop the
             close button is hidden since the sidebar is always-visible. */}
         <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-slate-800 px-4">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="bg-primary text-primary-foreground flex h-8 w-8 items-center justify-center rounded-lg">
-              <MessageSquare className="h-4 w-4" />
-            </div>
-            <span className="text-sm font-semibold text-white">Wulk CRM</span>
+          <Link href="/dashboard" className="flex min-w-0 items-center gap-2">
+            {company?.logo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={company.logo_url}
+                alt={company.name}
+                className="h-8 w-8 shrink-0 rounded-lg object-cover bg-slate-800"
+              />
+            ) : (
+              <div className="bg-primary text-primary-foreground flex h-8 w-8 shrink-0 items-center justify-center rounded-lg">
+                <MessageSquare className="h-4 w-4" />
+              </div>
+            )}
+            <span className="truncate text-sm font-semibold text-white">
+              {company?.name || 'Wulk CRM'}
+            </span>
           </Link>
           <button
             type="button"

@@ -51,6 +51,9 @@ import {
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
+import { useAuth } from '@/hooks/use-auth';
+import { canFilterAssignees } from '@/lib/auth/permissions';
+import { getAssignableProfiles } from '@/lib/auth/assignable-profiles';
 
 const PAGE_SIZE = 25;
 
@@ -63,6 +66,11 @@ interface ContactWithTags extends Contact {
 
 export default function ContactsPage() {
   const supabase = createClient();
+  const { profile } = useAuth();
+  const showAssigneeFilter = canFilterAssignees(profile?.role ?? null);
+
+  const [assignableProfiles, setAssignableProfiles] = useState<Profile[]>([]);
+  const [assigneeFilter, setAssigneeFilter] = useState<string[]>([]);
 
   const [contacts, setContacts] = useState<ContactWithTags[]>([]);
   const [loading, setLoading] = useState(true);
@@ -203,6 +211,11 @@ export default function ContactsPage() {
       query = query.or(parts.join(','));
     }
 
+    // Assignee multi-select filter (server-side)
+    if (assigneeFilter.length > 0) {
+      query = query.in('assigned_to', assigneeFilter);
+    }
+
     // Apply custom field filters
     for (const f of filterFields) {
       const selected = activeFilters[f.id];
@@ -271,7 +284,7 @@ export default function ContactsPage() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, tagsMap, reminderTab, customTextFields, filterFields, activeFilters]);
+  }, [supabase, page, search, tagsMap, reminderTab, customTextFields, filterFields, activeFilters, assigneeFilter]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
@@ -306,6 +319,30 @@ export default function ContactsPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContacts();
   }, [fetchContacts]);
+
+  // Load role-scoped assignable profiles for the Assignee filter
+  useEffect(() => {
+    if (!profile || !showAssigneeFilter) return;
+    let cancelled = false;
+    (async () => {
+      const list = await getAssignableProfiles(
+        supabase,
+        profile.id,
+        profile.role ?? 'executive',
+      );
+      if (!cancelled) setAssignableProfiles(list);
+    })();
+    return () => { cancelled = true; };
+  }, [profile, showAssigneeFilter, supabase]);
+
+  function toggleAssignee(profileId: string) {
+    setAssigneeFilter((prev) =>
+      prev.includes(profileId)
+        ? prev.filter((id) => id !== profileId)
+        : [...prev, profileId]
+    );
+    setPage(0);
+  }
 
   function openAddForm() {
     setEditContact(null);
@@ -358,7 +395,9 @@ export default function ContactsPage() {
   const hasNext = page < totalPages - 1;
   const hasPrev = page > 0;
 
-  const activeFilterCount = Object.values(activeFilters).filter((v) => v.length > 0).length;
+  const activeFilterCount =
+    Object.values(activeFilters).filter((v) => v.length > 0).length +
+    (assigneeFilter.length > 0 ? 1 : 0);
 
   function toggleFilter(fieldId: string, value: string) {
     setActiveFilters((prev) => {
@@ -449,7 +488,7 @@ export default function ContactsPage() {
           />
         </div>
 
-        {filterFields.length > 0 && (
+        {(filterFields.length > 0 || (showAssigneeFilter && assignableProfiles.length > 0)) && (
           <Popover>
             <PopoverTrigger
               className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors cursor-pointer ${
@@ -468,20 +507,64 @@ export default function ContactsPage() {
             </PopoverTrigger>
             <PopoverContent
               align="end"
-              className="w-72 border-slate-700 bg-slate-900 p-3 space-y-3"
+              className="w-72 border-slate-700 bg-slate-900 p-3 space-y-3 max-h-[70vh] overflow-y-auto"
             >
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Filters</p>
                 {activeFilterCount > 0 && (
                   <button
                     type="button"
-                    onClick={() => { setActiveFilters({}); setPage(0); }}
+                    onClick={() => { setActiveFilters({}); setAssigneeFilter([]); setPage(0); }}
                     className="text-[10px] text-slate-500 hover:text-slate-300 cursor-pointer"
                   >
                     Clear all
                   </button>
                 )}
               </div>
+
+              {/* Assignee filter — Admin/Owner/Manager only */}
+              {showAssigneeFilter && assignableProfiles.length > 0 && (
+                <div className="space-y-1.5 pb-2 border-b border-slate-700/50">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+                      Assignee
+                    </p>
+                    {assigneeFilter.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => { setAssigneeFilter([]); setPage(0); }}
+                        className="text-[10px] text-slate-600 hover:text-slate-400 cursor-pointer flex items-center gap-0.5"
+                      >
+                        <X className="size-2.5" /> Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {assignableProfiles.map((p) => {
+                      const selected = assigneeFilter.includes(p.id);
+                      const label = p.full_name || p.email;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => toggleAssignee(p.id)}
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium cursor-pointer transition-all ${
+                            selected
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                          }`}
+                        >
+                          <span className="inline-flex size-3.5 items-center justify-center rounded-full bg-black/20 text-[9px] font-bold">
+                            {label.charAt(0).toUpperCase()}
+                          </span>
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {filterFields.map((f) => {
                 const selected = activeFilters[f.id] ?? [];
                 return (
@@ -544,6 +627,25 @@ export default function ContactsPage() {
       {/* Active filter chips */}
       {activeFilterCount > 0 && (
         <div className="flex flex-wrap gap-1.5 -mt-3">
+          {assigneeFilter.map((id) => {
+            const p = assignableProfiles.find((x) => x.id === id);
+            const label = p?.full_name || p?.email || 'Unknown';
+            return (
+              <span
+                key={`assignee-${id}`}
+                className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-[11px] text-primary"
+              >
+                Assignee: {label}
+                <button
+                  type="button"
+                  onClick={() => toggleAssignee(id)}
+                  className="hover:text-primary/70 cursor-pointer"
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+            );
+          })}
           {filterFields.map((f) => {
             const selected = activeFilters[f.id] ?? [];
             if (selected.length === 0) return null;

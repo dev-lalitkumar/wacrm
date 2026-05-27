@@ -35,6 +35,7 @@ import { QuickFollowup } from "@/components/shared/quick-followup";
 import { CollapsibleSection } from "@/components/shared/collapsible-section";
 import { DealReminderSection } from "./deal-reminder-section";
 import { MarkLostDialog } from "./mark-lost-dialog";
+import { reminderStatus } from "@/lib/deals/reminder-status";
 
 interface DealDetailViewProps {
   open: boolean;
@@ -61,30 +62,6 @@ function formatDate(dateStr?: string) {
     day: "numeric",
     year: "numeric",
   });
-}
-
-function reminderStatus(reminder_at?: string): {
-  label: string;
-  cls: string;
-} | null {
-  if (!reminder_at) return null;
-  const dt = new Date(reminder_at);
-  const now = new Date();
-  const todayEnd = new Date();
-  todayEnd.setHours(23, 59, 59, 999);
-  const tomorrowEnd = new Date(todayEnd);
-  tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
-
-  if (dt < now) return { label: "Overdue", cls: "bg-red-500/15 text-red-400" };
-  if (dt <= todayEnd) {
-    const time = dt.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
-    return { label: `Today ${time}`, cls: "bg-amber-500/15 text-amber-400" };
-  }
-  if (dt <= tomorrowEnd) return { label: "Tomorrow", cls: "bg-slate-700 text-slate-300" };
-  return {
-    label: dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-    cls: "bg-slate-700 text-slate-400",
-  };
 }
 
 /** Render a custom field value read-only (for info cards). */

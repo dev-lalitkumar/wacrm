@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { PipelineStage, Deal, CustomField } from "@/types";
+import type { PipelineStage, Deal, CustomField, Profile } from "@/types";
 import { PipelineBoard } from "@/components/pipelines/pipeline-board";
 import { DealForm } from "@/components/pipelines/deal-form";
 import { DealDetailView } from "@/components/pipelines/deal-detail-view";
+import { DealList, type DealLastFollowup } from "@/components/pipelines/deal-list";
 import { PipelineAnalytics } from "@/components/pipelines/pipeline-analytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,8 +15,18 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from "@/components/ui/popover";
-import { Plus, Search, SlidersHorizontal, X } from "lucide-react";
+import {
+  Plus,
+  Search,
+  SlidersHorizontal,
+  X,
+  LayoutGrid,
+  Table as TableIcon,
+} from "lucide-react";
 import { FIXED_PIPELINE_ID } from "@/lib/pipeline/constants";
+import { useAuth } from "@/hooks/use-auth";
+import { canFilterAssignees } from "@/lib/auth/permissions";
+import { getAssignableProfiles } from "@/lib/auth/assignable-profiles";
 
 type ReminderTab = "all" | "today" | "missed" | "upcoming";
 interface ReminderCounts { all: number; today: number; missed: number; upcoming: number; }
@@ -40,10 +51,18 @@ function filterDealsByTab(
   q: string,
   fieldFilters: Record<string, string[]>,
   filterFields: CustomField[],
+  assigneeFilter: string[],
 ): Deal[] {
   const now = new Date();
   const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
   let filtered = allDeals;
+
+  // Assignee multi-select filter
+  if (assigneeFilter.length > 0) {
+    filtered = filtered.filter(
+      (d) => d.assigned_to && assigneeFilter.includes(d.assigned_to),
+    );
+  }
 
   if (tab !== "all") {
     filtered = filtered.filter((d) => {
@@ -97,10 +116,22 @@ function filterDealsByTab(
 
 export default function PipelinesPage() {
   const supabase = createClient();
+  const { profile } = useAuth();
+  const showAssigneeFilter = canFilterAssignees(profile?.role ?? null);
 
   const [stages, setStages] = useState<PipelineStage[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // View toggle (Kanban / Table) — Kanban default, no persistence per plan
+  const [viewMode, setViewMode] = useState<"board" | "table">("board");
+
+  // Assignee filter
+  const [assignableProfiles, setAssignableProfiles] = useState<Profile[]>([]);
+  const [assigneeFilter, setAssigneeFilter] = useState<string[]>([]);
+
+  // Last-followup map for the table view
+  const [lastFollowups, setLastFollowups] = useState<Record<string, DealLastFollowup>>({});
 
   // Reminder filter state
   const [reminderTab, setReminderTab] = useState<ReminderTab>("today");
@@ -136,6 +167,24 @@ export default function PipelinesPage() {
     return (data ?? []) as Deal[];
   }, [supabase]);
 
+  /** Fetch most-recent followup per deal — used by the table view */
+  const loadLastFollowups = useCallback(async (dealIds: string[]) => {
+    if (dealIds.length === 0) return {} as Record<string, DealLastFollowup>;
+    const { data } = await supabase
+      .from("deal_followups")
+      .select("deal_id, channel, created_at")
+      .in("deal_id", dealIds)
+      .order("created_at", { ascending: false });
+    const map: Record<string, DealLastFollowup> = {};
+    (data ?? []).forEach((row: { deal_id: string; channel: string; created_at: string }) => {
+      // First occurrence wins (rows are descending) — skip if already mapped
+      if (!map[row.deal_id]) {
+        map[row.deal_id] = { channel: row.channel, created_at: row.created_at };
+      }
+    });
+    return map;
+  }, [supabase]);
+
   const fetchDealFilterFields = useCallback(async () => {
     const [dealRes, contactRes, displayRes] = await Promise.all([
       supabase.from("custom_fields").select("*").eq("applies_to", "deal")
@@ -163,20 +212,40 @@ export default function PipelinesPage() {
       setDeals(d);
       setReminderCounts(computeReminderCounts(d));
       setLoading(false);
+      // Background load: last followups (don't block initial render)
+      const fuMap = await loadLastFollowups(d.map((x) => x.id));
+      if (!cancelled) setLastFollowups(fuMap);
     })();
     return () => { cancelled = true; };
-  }, [loadStages, loadDeals]);
+  }, [loadStages, loadDeals, loadLastFollowups]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchDealFilterFields();
   }, [fetchDealFilterFields]);
 
+  // Load assignable profiles for the role-scoped Assignee filter
+  useEffect(() => {
+    if (!profile || !showAssigneeFilter) return;
+    let cancelled = false;
+    (async () => {
+      const list = await getAssignableProfiles(
+        supabase,
+        profile.id,
+        profile.role ?? "executive",
+      );
+      if (!cancelled) setAssignableProfiles(list);
+    })();
+    return () => { cancelled = true; };
+  }, [profile, showAssigneeFilter, supabase]);
+
   const refreshDeals = useCallback(async () => {
     const d = await loadDeals();
     setDeals(d);
     setReminderCounts(computeReminderCounts(d));
-  }, [loadDeals]);
+    const fuMap = await loadLastFollowups(d.map((x) => x.id));
+    setLastFollowups(fuMap);
+  }, [loadDeals, loadLastFollowups]);
 
   const handleDealMoved = useCallback(
     async (dealId: string, newStageId: string) => {
@@ -205,7 +274,17 @@ export default function PipelinesPage() {
     setDetailOpen(true);
   }, []);
 
-  const activeDealFilterCount = Object.values(activeDealFilters).filter((v) => v.length > 0).length;
+  const activeDealFilterCount =
+    Object.values(activeDealFilters).filter((v) => v.length > 0).length +
+    (assigneeFilter.length > 0 ? 1 : 0);
+
+  function toggleAssignee(profileId: string) {
+    setAssigneeFilter((prev) =>
+      prev.includes(profileId)
+        ? prev.filter((id) => id !== profileId)
+        : [...prev, profileId]
+    );
+  }
 
   function toggleDealFilter(fieldId: string, value: string) {
     setActiveDealFilters((prev) => {
@@ -246,14 +325,45 @@ export default function PipelinesPage() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-bold text-white">Sales Pipeline</h1>
-        <Button
-          onClick={() => handleAddDeal()}
-          disabled={stages.length === 0}
-          className="bg-primary text-primary-foreground hover:bg-primary/90"
-        >
-          <Plus className="mr-1 h-4 w-4" />
-          Add Deal
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* View toggle */}
+          <div className="flex items-center gap-0.5 rounded-lg border border-slate-700 bg-slate-900 p-0.5">
+            <button
+              type="button"
+              onClick={() => setViewMode("board")}
+              title="Kanban view"
+              className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                viewMode === "board"
+                  ? "bg-slate-800 text-primary"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <LayoutGrid className="size-3.5" />
+              <span className="hidden sm:inline">Kanban</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("table")}
+              title="Table view"
+              className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                viewMode === "table"
+                  ? "bg-slate-800 text-primary"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <TableIcon className="size-3.5" />
+              <span className="hidden sm:inline">Table</span>
+            </button>
+          </div>
+          <Button
+            onClick={() => handleAddDeal()}
+            disabled={stages.length === 0}
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            <Plus className="mr-1 h-4 w-4" />
+            Add Deal
+          </Button>
+        </div>
       </div>
 
       {/* Reminder filter tabs + search + custom field filters */}
@@ -289,7 +399,7 @@ export default function PipelinesPage() {
               className="pl-8 h-8 w-48 bg-slate-900 border-slate-700 text-white text-sm placeholder:text-slate-500"
             />
           </div>
-          {dealFilterFields.length > 0 && (
+          {(dealFilterFields.length > 0 || (showAssigneeFilter && assignableProfiles.length > 0)) && (
             <Popover>
               <PopoverTrigger
                 className={`inline-flex items-center gap-1.5 rounded-lg border px-3 h-8 text-xs font-medium transition-colors cursor-pointer ${
@@ -308,20 +418,64 @@ export default function PipelinesPage() {
               </PopoverTrigger>
               <PopoverContent
                 align="start"
-                className="w-72 border-slate-700 bg-slate-900 p-3 space-y-3"
+                className="w-72 border-slate-700 bg-slate-900 p-3 space-y-3 max-h-[70vh] overflow-y-auto"
               >
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Filters</p>
                   {activeDealFilterCount > 0 && (
                     <button
                       type="button"
-                      onClick={() => setActiveDealFilters({})}
+                      onClick={() => { setActiveDealFilters({}); setAssigneeFilter([]); }}
                       className="text-[10px] text-slate-500 hover:text-slate-300 cursor-pointer"
                     >
                       Clear all
                     </button>
                   )}
                 </div>
+
+                {/* Assignee filter — Admin/Owner/Manager only */}
+                {showAssigneeFilter && assignableProfiles.length > 0 && (
+                  <div className="space-y-1.5 pb-2 border-b border-slate-700/50">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+                        Assignee
+                      </p>
+                      {assigneeFilter.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setAssigneeFilter([])}
+                          className="text-[10px] text-slate-600 hover:text-slate-400 cursor-pointer flex items-center gap-0.5"
+                        >
+                          <X className="size-2.5" /> Clear
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {assignableProfiles.map((p) => {
+                        const selected = assigneeFilter.includes(p.id);
+                        const label = p.full_name || p.email;
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => toggleAssignee(p.id)}
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium cursor-pointer transition-all ${
+                              selected
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-slate-700 text-slate-400 hover:bg-slate-600"
+                            }`}
+                          >
+                            <span className="inline-flex size-3.5 items-center justify-center rounded-full bg-black/20 text-[9px] font-bold">
+                              {label.charAt(0).toUpperCase()}
+                            </span>
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {dealFilterFields.map((f, idx) => {
                   const selected = activeDealFilters[f.id] ?? [];
                   const prevField = dealFilterFields[idx - 1];
@@ -390,6 +544,26 @@ export default function PipelinesPage() {
         {/* Active filter chips */}
         {activeDealFilterCount > 0 && (
           <div className="flex flex-wrap gap-1.5">
+            {/* Assignee chips */}
+            {assigneeFilter.map((id) => {
+              const p = assignableProfiles.find((x) => x.id === id);
+              const label = p?.full_name || p?.email || "Unknown";
+              return (
+                <span
+                  key={`assignee-${id}`}
+                  className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-[11px] text-primary"
+                >
+                  Assignee: {label}
+                  <button
+                    type="button"
+                    onClick={() => toggleAssignee(id)}
+                    className="hover:text-primary/70 cursor-pointer"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
+              );
+            })}
             {dealFilterFields.map((f) => {
               const selected = activeDealFilters[f.id] ?? [];
               if (selected.length === 0) return null;
@@ -413,16 +587,28 @@ export default function PipelinesPage() {
         )}
       </div>
 
-      {/* Board */}
+      {/* Analytics row — both views share this header */}
       <PipelineAnalytics stages={stages} deals={deals} />
-      <PipelineBoard
-        stages={stages}
-        deals={filterDealsByTab(deals, reminderTab, search, activeDealFilters, dealFilterFields)}
-        onDealMoved={handleDealMoved}
-        onAddDeal={handleAddDeal}
-        onEditDeal={handleEditDeal}
-        customFields={dealDisplayFields}
-      />
+
+      {/* Board or table */}
+      {viewMode === "board" ? (
+        <PipelineBoard
+          stages={stages}
+          deals={filterDealsByTab(deals, reminderTab, search, activeDealFilters, dealFilterFields, assigneeFilter)}
+          onDealMoved={handleDealMoved}
+          onAddDeal={handleAddDeal}
+          onEditDeal={handleEditDeal}
+          customFields={dealDisplayFields}
+        />
+      ) : (
+        <DealList
+          deals={filterDealsByTab(deals, reminderTab, search, activeDealFilters, dealFilterFields, assigneeFilter)}
+          stages={stages}
+          onEditDeal={handleEditDeal}
+          showAssignee={showAssigneeFilter}
+          lastFollowups={lastFollowups}
+        />
+      )}
 
       {/* Deal Create Form */}
       <DealForm

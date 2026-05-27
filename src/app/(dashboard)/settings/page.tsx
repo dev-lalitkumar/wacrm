@@ -11,6 +11,7 @@ import {
   LayoutList,
   Webhook as WebhookIcon,
   XCircle,
+  Building2,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
@@ -25,15 +26,18 @@ import { CustomFieldsManager } from '@/components/settings/custom-fields-manager
 import { LostReasonsManager } from '@/components/settings/lost-reasons-manager';
 import { SourcesManager } from '@/components/settings/sources-manager';
 import { IntegrationsManager } from '@/components/settings/integrations-manager';
+import { CompanyForm } from '@/components/settings/company-form';
 import { useAuth } from '@/hooks/use-auth';
 import {
   canManageTeam,
   canManageCustomFields,
   canViewWebhooks,
+  canManageCompany,
 } from '@/lib/auth/permissions';
 
 const TAB_VALUES = [
   'profile',
+  'company',
   'team',
   'custom-fields',
   'lost-reasons',
@@ -56,6 +60,7 @@ export default function SettingsPage() {
   const { profile } = useAuth();
   const showTeam = canManageTeam(profile?.role ?? null);
   const showCustomFields = canManageCustomFields(profile?.role ?? null);
+  const showCompany = canManageCompany(profile?.role ?? null);
   // Sources tab is visible to everyone (read-only for non-admins).
   // Integrations tab is admin/owner/manager only.
   const showIntegrations = canViewWebhooks(profile?.role ?? null);
@@ -75,6 +80,9 @@ export default function SettingsPage() {
     tab = 'profile';
   }
   if (tab === 'integrations' && !showIntegrations) {
+    tab = 'profile';
+  }
+  if (tab === 'company' && !showCompany) {
     tab = 'profile';
   }
 
@@ -103,6 +111,15 @@ export default function SettingsPage() {
             <User className="size-4" />
             Profile
           </TabsTrigger>
+          {showCompany && (
+            <TabsTrigger
+              value="company"
+              className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
+            >
+              <Building2 className="size-4" />
+              Company
+            </TabsTrigger>
+          )}
           {showTeam && (
             <TabsTrigger
               value="team"
@@ -179,6 +196,12 @@ export default function SettingsPage() {
           <PasswordForm />
           <SessionsCard />
         </TabsContent>
+
+        {showCompany && (
+          <TabsContent value="company" className="space-y-6">
+            <CompanyForm />
+          </TabsContent>
+        )}
 
         {showTeam && (
           <TabsContent value="team">

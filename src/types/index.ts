@@ -228,6 +228,19 @@ export interface PipelineStage {
 
 export type DealStatus = 'open' | 'won' | 'lost';
 
+/** Singleton company entity — id is always 1 (migration 019). */
+export interface Company {
+  id: number;
+  name: string;
+  logo_url?: string | null;
+  website?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  tax_id?: string | null;
+  updated_at: string;
+}
+
 /** Lost reason master — seeded with 5 system defaults in migration 018. */
 export interface LostReason {
   id: string;

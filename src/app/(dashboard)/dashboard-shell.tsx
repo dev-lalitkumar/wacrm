@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
+import { CompanyProvider } from "@/hooks/use-company";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 
@@ -53,7 +54,9 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
-      <DashboardShellInner>{children}</DashboardShellInner>
+      <CompanyProvider>
+        <DashboardShellInner>{children}</DashboardShellInner>
+      </CompanyProvider>
     </AuthProvider>
   );
 }

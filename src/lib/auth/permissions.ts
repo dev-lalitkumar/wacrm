@@ -126,6 +126,18 @@ export function canManageLostReasons(role: Role | string | null | undefined) {
   return role === 'admin'
 }
 
+// ── Company (migration 019) ────────────────────────────────────
+/** Admin + Owner can edit the org-wide company info (name, logo, etc) */
+export function canManageCompany(role: Role | string | null | undefined) {
+  return role === 'admin' || role === 'owner'
+}
+
+// ── Assignee filter (deals + contacts) ─────────────────────────
+/** Admin/Owner/Manager can filter by assignee. Executives are RLS-scoped to own data. */
+export function canFilterAssignees(role: Role | string | null | undefined) {
+  return role === 'admin' || role === 'owner' || role === 'manager'
+}
+
 // ── Reports ───────────────────────────────────────────────────
 /** Admin/Owner see all reps' data */
 export function canViewAllReports(role: Role | string | null | undefined) {
