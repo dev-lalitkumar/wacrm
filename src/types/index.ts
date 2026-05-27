@@ -228,6 +228,15 @@ export interface PipelineStage {
 
 export type DealStatus = 'open' | 'won' | 'lost';
 
+/** Lost reason master — seeded with 5 system defaults in migration 018. */
+export interface LostReason {
+  id: string;
+  reason: string;
+  is_system: boolean;
+  sort_order: number;
+  created_at: string;
+}
+
 export interface Deal {
   id: string;
   user_id: string;
@@ -257,6 +266,10 @@ export interface Deal {
   source_id?: string | null;
   /** Embedded source row when loaded via nested join. */
   source?: Source;
+  /** FK to lost_reasons.id — required when status='lost' (migration 018). */
+  lost_reason_id?: string | null;
+  /** Embedded lost reason when loaded via nested join. */
+  lost_reason?: LostReason;
   created_at: string;
   updated_at?: string;
   contact?: Contact;

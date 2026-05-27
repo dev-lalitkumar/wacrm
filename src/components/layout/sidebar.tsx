@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Users,
   GitBranch,
+  BarChart2,
   Radio,
   Zap,
   Workflow,
@@ -51,6 +52,7 @@ const navItems: NavItem[] = [
   { href: '/inbox', label: 'Inbox', icon: MessageSquare },
   { href: '/contacts', label: 'Contacts', icon: Users },
   { href: '/pipelines', label: 'Pipelines', icon: GitBranch },
+  { href: '/reports', label: 'Reports', icon: BarChart2 },
   {
     href: '/broadcasts',
     label: 'Broadcasts',

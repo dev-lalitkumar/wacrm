@@ -121,6 +121,22 @@ export function canManageSources(role: Role | string | null | undefined) {
   return role === 'admin'
 }
 
+// ── Lost Reasons (migration 018) ───────────────────────────────
+export function canManageLostReasons(role: Role | string | null | undefined) {
+  return role === 'admin'
+}
+
+// ── Reports ───────────────────────────────────────────────────
+/** Admin/Owner see all reps' data */
+export function canViewAllReports(role: Role | string | null | undefined) {
+  return role === 'admin' || role === 'owner'
+}
+
+/** Admin/Owner/Manager see all executives + themselves */
+export function canViewTeamReports(role: Role | string | null | undefined) {
+  return role === 'admin' || role === 'owner' || role === 'manager'
+}
+
 export const ROLE_LABEL: Record<Role, string> = {
   admin: 'Admin',
   owner: 'Owner',

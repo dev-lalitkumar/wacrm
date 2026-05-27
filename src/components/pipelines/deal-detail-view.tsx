@@ -34,6 +34,7 @@ import { ContactInfoCard } from "@/components/shared/contact-info-card";
 import { QuickFollowup } from "@/components/shared/quick-followup";
 import { CollapsibleSection } from "@/components/shared/collapsible-section";
 import { DealReminderSection } from "./deal-reminder-section";
+import { MarkLostDialog } from "./mark-lost-dialog";
 
 interface DealDetailViewProps {
   open: boolean;
@@ -127,6 +128,7 @@ export function DealDetailView({
 
   // ─── UI state ──────────────────────────────────────────────────────────────
   const [statusActing, setStatusActing] = useState<"won" | "lost" | "open" | null>(null);
+  const [markLostOpen, setMarkLostOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -173,7 +175,7 @@ export function DealDetailView({
         supabase
           .from("deals")
           .select(
-            "*, contact:contacts(*, contact_tags(tag:tags(*)), source:sources(id, name, key)), assignee:profiles!deals_assigned_to_fkey(id, full_name, email), stage:pipeline_stages(*), source:sources(id, name, key)"
+            "*, contact:contacts(*, contact_tags(tag:tags(*)), source:sources(id, name, key)), assignee:profiles!deals_assigned_to_fkey(id, full_name, email), stage:pipeline_stages(*), source:sources(id, name, key), lost_reason:lost_reasons(id, reason)"
           )
           .eq("id", dealId)
           .single(),
@@ -289,6 +291,11 @@ export function DealDetailView({
   // ─── Actions ────────────────────────────────────────────────────────────────
   async function handleStatusChange(status: "won" | "lost" | "open") {
     if (!deal) return;
+    // "lost" requires a reason — open the dialog instead of direct update
+    if (status === "lost") {
+      setMarkLostOpen(true);
+      return;
+    }
     setStatusActing(status);
     const { error } = await supabase
       .from("deals")
@@ -299,13 +306,20 @@ export function DealDetailView({
       toast.error("Failed to update deal status");
       return;
     }
-    toast.success(
-      status === "won"
-        ? "Marked as won 🎉"
-        : status === "lost"
-        ? "Marked as lost"
-        : "Deal reopened"
-    );
+    toast.success(status === "won" ? "Marked as won 🎉" : "Deal reopened");
+    fetchAll();
+    onSaved();
+  }
+
+  /** Called by MarkLostDialog when the user confirms a reason */
+  async function handleConfirmLost(reasonId: string) {
+    if (!deal) return;
+    const { error } = await supabase
+      .from("deals")
+      .update({ status: "lost", lost_reason_id: reasonId })
+      .eq("id", deal.id);
+    if (error) throw new Error(error.message);
+    toast.success("Marked as lost");
     fetchAll();
     onSaved();
   }
@@ -654,6 +668,12 @@ export function DealDetailView({
                     {deal.status === "lost" && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[11px] font-semibold text-red-400">
                         <X className="h-2.5 w-2.5" /> Lost
+                      </span>
+                    )}
+                    {/* Lost reason chip */}
+                    {deal.status === "lost" && deal.lost_reason && (
+                      <span className="inline-flex items-center rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[11px] text-red-400">
+                        {deal.lost_reason.reason}
                       </span>
                     )}
                   </div>
@@ -1165,6 +1185,13 @@ export function DealDetailView({
           </div>
         )}
       </SheetContent>
+
+      {/* Mark Lost dialog — mounted outside SheetContent to avoid z-index stacking issues */}
+      <MarkLostDialog
+        open={markLostOpen}
+        onOpenChange={setMarkLostOpen}
+        onConfirm={handleConfirmLost}
+      />
     </Sheet>
   );
 }

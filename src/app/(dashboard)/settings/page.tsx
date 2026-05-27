@@ -10,6 +10,7 @@ import {
   Users,
   LayoutList,
   Webhook as WebhookIcon,
+  XCircle,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
@@ -21,6 +22,7 @@ import { SessionsCard } from '@/components/settings/sessions-card';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { TeamManager } from '@/components/settings/team-manager';
 import { CustomFieldsManager } from '@/components/settings/custom-fields-manager';
+import { LostReasonsManager } from '@/components/settings/lost-reasons-manager';
 import { SourcesManager } from '@/components/settings/sources-manager';
 import { IntegrationsManager } from '@/components/settings/integrations-manager';
 import { useAuth } from '@/hooks/use-auth';
@@ -34,6 +36,7 @@ const TAB_VALUES = [
   'profile',
   'team',
   'custom-fields',
+  'lost-reasons',
   'sources',
   'integrations',
   'whatsapp',
@@ -119,6 +122,13 @@ export default function SettingsPage() {
             </TabsTrigger>
           )}
           <TabsTrigger
+            value="lost-reasons"
+            className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
+          >
+            <XCircle className="size-4" />
+            Lost Reasons
+          </TabsTrigger>
+          <TabsTrigger
             value="sources"
             className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
           >
@@ -181,6 +191,10 @@ export default function SettingsPage() {
             <CustomFieldsManager />
           </TabsContent>
         )}
+
+        <TabsContent value="lost-reasons" className="space-y-6">
+          <LostReasonsManager />
+        </TabsContent>
 
         <TabsContent value="sources" className="space-y-6">
           <SourcesManager />
