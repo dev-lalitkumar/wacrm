@@ -2,118 +2,102 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/hooks/use-auth'
+import { canViewTeamReports } from '@/lib/auth/permissions'
+import { getVisibleProfileIds } from '@/lib/reports/visible-profiles'
 import {
-  MessageSquare,
-  UserPlus,
+  Users,
   DollarSign,
-  Send,
+  Trophy as TrophyIcon,
+  AlertTriangle,
 } from 'lucide-react'
 
 import {
-  loadActivity,
-  loadConversationsSeries,
-  loadMetrics,
-  loadPipelineDonut,
-  loadResponseTime,
-} from '@/lib/dashboard/queries'
-import type {
-  ActivityItem,
-  ConversationsSeriesPoint,
-  MetricsBundle,
-  PipelineDonutData,
-  ResponseTimeSummary,
-} from '@/lib/dashboard/types'
+  loadCrmMetrics,
+  loadWonLostTrend,
+  loadUpcomingReminders,
+  loadRecentFollowups,
+  loadTeamLeaderboard,
+} from '@/lib/main-dashboard/queries'
+import { loadPipelineDonut } from '@/lib/dashboard/queries'
+import type { CrmMetricsBundle, WonLostWeek, UpcomingReminder, RecentFollowup, LeaderboardRow } from '@/lib/main-dashboard/types'
+import type { PipelineDonutData } from '@/lib/dashboard/types'
 
 import { MetricCard } from '@/components/dashboard/metric-card'
 import { SkeletonCard } from '@/components/dashboard/skeleton'
-import { QuickActions } from '@/components/dashboard/quick-actions'
-import { ConversationsChart } from '@/components/dashboard/conversations-chart'
 import { PipelineDonut } from '@/components/dashboard/pipeline-donut'
-import { ResponseTimeChart } from '@/components/dashboard/response-time-chart'
-import { ActivityFeed } from '@/components/dashboard/activity-feed'
-
-type RangeDays = 7 | 30 | 90
+import { WonLostChart } from '@/components/main-dashboard/won-lost-chart'
+import { UpcomingReminders } from '@/components/main-dashboard/upcoming-reminders'
+import { RecentFollowups } from '@/components/main-dashboard/recent-followups'
+import { TeamLeaderboard } from '@/components/main-dashboard/team-leaderboard'
 
 export default function DashboardPage() {
-  const [metrics, setMetrics] = useState<MetricsBundle | null>(null)
-  const [metricsLoading, setMetricsLoading] = useState(true)
+  const { profile } = useAuth()
+  const showTeam = canViewTeamReports(profile?.role)
 
-  const [range, setRange] = useState<RangeDays>(30)
-  // Keep a cache per range so switching tabs doesn't re-fetch what we
-  // already have. Ranges the user hasn't opened yet stay null and
-  // trigger a fetch on first view.
-  const [series, setSeries] = useState<Record<RangeDays, ConversationsSeriesPoint[] | null>>({
-    7: null,
-    30: null,
-    90: null,
-  })
-  const [seriesLoading, setSeriesLoading] = useState(true)
+  const [metrics, setMetrics] = useState<CrmMetricsBundle | null>(null)
+  const [metricsLoading, setMetricsLoading] = useState(true)
 
   const [pipeline, setPipeline] = useState<PipelineDonutData | null>(null)
   const [pipelineLoading, setPipelineLoading] = useState(true)
 
-  const [responseTime, setResponseTime] = useState<ResponseTimeSummary | null>(null)
-  const [responseTimeLoading, setResponseTimeLoading] = useState(true)
+  const [wonLost, setWonLost] = useState<WonLostWeek[] | null>(null)
+  const [wonLostLoading, setWonLostLoading] = useState(true)
 
-  const [activity, setActivity] = useState<ActivityItem[] | null>(null)
-  const [activityLoading, setActivityLoading] = useState(true)
+  const [reminders, setReminders] = useState<UpcomingReminder[] | null>(null)
+  const [remindersLoading, setRemindersLoading] = useState(true)
+
+  const [followups, setFollowups] = useState<RecentFollowup[] | null>(null)
+  const [followupsLoading, setFollowupsLoading] = useState(true)
+
+  const [leaderboard, setLeaderboard] = useState<LeaderboardRow[] | null>(null)
+  const [leaderboardLoading, setLeaderboardLoading] = useState(true)
 
   const loadAll = useCallback(() => {
     const db = createClient()
 
-    // Kick everything off in parallel. Each block has its own
-    // setState + finally so a slow query doesn't hold up faster
-    // sections — each widget shows its own skeleton independently.
-    void loadMetrics(db)
+    // Kick off all independent queries in parallel — each widget shows
+    // its own skeleton while loading.
+    void loadCrmMetrics(db)
       .then((m) => setMetrics(m))
-      .catch((err) => console.error('[dashboard] metrics failed:', err))
+      .catch((err) => console.error('[dashboard] crm metrics failed:', err))
       .finally(() => setMetricsLoading(false))
-
-    void loadConversationsSeries(db, 30)
-      .then((s) => setSeries((prev) => ({ ...prev, 30: s })))
-      .catch((err) => console.error('[dashboard] series failed:', err))
-      .finally(() => setSeriesLoading(false))
 
     void loadPipelineDonut(db)
       .then((p) => setPipeline(p))
       .catch((err) => console.error('[dashboard] pipeline failed:', err))
       .finally(() => setPipelineLoading(false))
 
-    void loadResponseTime(db)
-      .then((r) => setResponseTime(r))
-      .catch((err) => console.error('[dashboard] response time failed:', err))
-      .finally(() => setResponseTimeLoading(false))
+    void loadWonLostTrend(db)
+      .then((w) => setWonLost(w))
+      .catch((err) => console.error('[dashboard] won/lost failed:', err))
+      .finally(() => setWonLostLoading(false))
 
-    // Fetch up to 50 so the biggest page-size option in the feed
-    // (50 rows) is already in memory — switching sizes then becomes
-    // a pure client-side slice with no extra round trip.
-    void loadActivity(db, 50)
-      .then((a) => setActivity(a))
-      .catch((err) => console.error('[dashboard] activity failed:', err))
-      .finally(() => setActivityLoading(false))
-  }, [])
+    void loadUpcomingReminders(db)
+      .then((r) => setReminders(r))
+      .catch((err) => console.error('[dashboard] reminders failed:', err))
+      .finally(() => setRemindersLoading(false))
+
+    void loadRecentFollowups(db)
+      .then((f) => setFollowups(f))
+      .catch((err) => console.error('[dashboard] followups failed:', err))
+      .finally(() => setFollowupsLoading(false))
+
+    // Team leaderboard — only for admin/owner/manager
+    if (showTeam && profile) {
+      void getVisibleProfileIds(db, profile.id, profile.role ?? 'executive')
+        .then((ids) => loadTeamLeaderboard(db, ids))
+        .then((lb) => setLeaderboard(lb))
+        .catch((err) => console.error('[dashboard] leaderboard failed:', err))
+        .finally(() => setLeaderboardLoading(false))
+    } else {
+      setLeaderboardLoading(false)
+    }
+  }, [showTeam, profile])
 
   useEffect(() => {
-    loadAll()
-  }, [loadAll])
-
-  // Range switch handler — kept in an event callback (not an effect)
-  // so the setState calls stay out of the react-hooks/set-state-in-effect
-  // rule's way. The cached bucket check means switching back to a
-  // previously-viewed range is instant and doesn't re-fetch.
-  const handleRangeChange = useCallback(
-    (r: RangeDays) => {
-      setRange(r)
-      if (series[r] !== null) return
-      setSeriesLoading(true)
-      const db = createClient()
-      loadConversationsSeries(db, r)
-        .then((s) => setSeries((prev) => ({ ...prev, [r]: s })))
-        .catch((err) => console.error('[dashboard] series failed:', err))
-        .finally(() => setSeriesLoading(false))
-    },
-    [series],
-  )
+    if (profile) loadAll()
+  }, [profile, loadAll])
 
   return (
     <div className="space-y-5">
@@ -121,7 +105,7 @@ export default function DashboardPage() {
       <div>
         <h1 className="text-2xl font-bold text-white">Dashboard</h1>
         <p className="mt-1 text-sm text-slate-400">
-          Live analytics across conversations, contacts, deals, broadcasts, and automations.
+          Your CRM overview — contacts, deals, reminders, and team performance.
         </p>
       </div>
 
@@ -132,84 +116,65 @@ export default function DashboardPage() {
         ) : (
           <>
             <MetricCard
-              title="Active Conversations"
-              value={metrics.activeConversations.current.toLocaleString()}
-              icon={MessageSquare}
+              title="Total Contacts"
+              value={metrics.totalContacts.toLocaleString()}
+              icon={Users}
               delta={{
-                sign: metrics.activeConversations.previous,
-                label: deltaLabel(metrics.activeConversations.previous, 'new today vs yesterday'),
+                sign: metrics.newContactsThisWeek,
+                label: `+${metrics.newContactsThisWeek} this week`,
               }}
             />
             <MetricCard
-              title="New Contacts Today"
-              value={metrics.newContactsToday.current.toLocaleString()}
-              icon={UserPlus}
-              delta={{
-                sign:
-                  metrics.newContactsToday.current - metrics.newContactsToday.previous,
-                label: deltaLabel(
-                  metrics.newContactsToday.current - metrics.newContactsToday.previous,
-                  'vs yesterday',
-                ),
-              }}
-            />
-            <MetricCard
-              title="Open Deals Value"
+              title="Open Deals"
               value={formatCurrency(metrics.openDealsValue)}
               icon={DollarSign}
               subtitle={`${metrics.openDealsCount} open deal${metrics.openDealsCount === 1 ? '' : 's'}`}
             />
             <MetricCard
-              title="Messages Sent Today"
-              value={metrics.messagesSentToday.current.toLocaleString()}
-              icon={Send}
-              delta={{
-                sign:
-                  metrics.messagesSentToday.current - metrics.messagesSentToday.previous,
-                label: deltaLabel(
-                  metrics.messagesSentToday.current - metrics.messagesSentToday.previous,
-                  'vs yesterday',
-                ),
-              }}
+              title="Won This Month"
+              value={formatCurrency(metrics.wonThisMonthValue)}
+              icon={TrophyIcon}
+              subtitle={`${metrics.wonThisMonthCount} deal${metrics.wonThisMonthCount === 1 ? '' : 's'} won`}
+            />
+            <MetricCard
+              title="Overdue Reminders"
+              value={metrics.overdueReminders.toLocaleString()}
+              icon={AlertTriangle}
+              subtitle={
+                metrics.overdueReminders > 0
+                  ? 'Needs attention'
+                  : 'All caught up!'
+              }
             />
           </>
         )}
       </div>
 
-      {/* Quick actions */}
-      <QuickActions />
-
-      {/* Charts row */}
-      {/* items-stretch (the grid default) stretches the two columns to
-          match the tallest sibling; adding h-full on each wrapper and
-          on the inner panels makes both cards actually fill that
-          stretched height so their rounded borders line up. Without
-          this, the pipeline card rendered at its natural (shorter)
-          height while the line chart drove the row height. */}
+      {/* Charts row — pipeline + won/lost */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         <div className="h-full lg:col-span-3">
-          <ConversationsChart
-            series={series}
-            loading={seriesLoading}
-            range={range}
-            onRangeChange={handleRangeChange}
-          />
+          <PipelineDonut data={pipeline} loading={pipelineLoading} />
         </div>
         <div className="h-full lg:col-span-2">
-          <PipelineDonut data={pipeline} loading={pipelineLoading} />
+          <WonLostChart data={wonLost} loading={wonLostLoading} />
         </div>
       </div>
 
-      {/* Response time */}
-      <ResponseTimeChart data={responseTime} loading={responseTimeLoading} />
+      {/* Reminders + Followups */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <UpcomingReminders data={reminders} loading={remindersLoading} />
+        <RecentFollowups data={followups} loading={followupsLoading} />
+      </div>
 
-      {/* Activity feed */}
-      <ActivityFeed items={activity} loading={activityLoading} />
+      {/* Team Leaderboard — admin/owner/manager only */}
+      {showTeam && (
+        <TeamLeaderboard data={leaderboard} loading={leaderboardLoading} />
+      )}
     </div>
   )
 }
 
-// ------------------------------------------------------------
+// ── Helpers ──────────────────────────────────────────────────────────────
 
 function formatCurrency(v: number): string {
   return new Intl.NumberFormat(undefined, {
@@ -218,10 +183,4 @@ function formatCurrency(v: number): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(v)
-}
-
-function deltaLabel(delta: number, suffix: string): string {
-  if (delta === 0) return `No change ${suffix}`
-  const sign = delta > 0 ? '+' : ''
-  return `${sign}${delta.toLocaleString()} ${suffix}`
 }
