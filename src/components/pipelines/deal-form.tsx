@@ -118,47 +118,47 @@ export function DealForm({
       toast.error("Title, contact, and stage are required");
       return;
     }
-    setSaving(true);
-
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const user = session?.user;
-    if (!user) {
-      toast.error("Not signed in");
-      setSaving(false);
+    if (!sourceId) {
+      toast.error("Source is required");
       return;
     }
+    setSaving(true);
 
-    const { data, error } = await supabase
-      .from("deals")
-      .insert({
+    try {
+      // Create via API route — all business logic lives server-side.
+      const body: Record<string, unknown> = {
         title: title.trim(),
         value: parseFloat(value) || 0,
         currency,
         contact_id: contactId,
         pipeline_id: pipelineId,
         stage_id: stageId,
-        assigned_to: assignedTo || null,
+        source_id: sourceId,
         notes: notes.trim() || null,
         expected_close_date: expectedCloseDate || null,
-        source_id: sourceId || null,
-        user_id: user.id,
-        status: "open",
-      })
-      .select("id")
-      .single();
+      };
+      if (assignedTo) body.assigned_to = assignedTo;
 
-    setSaving(false);
+      const res = await fetch("/api/deals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-    if (error || !data) {
-      toast.error("Failed to create deal");
-      return;
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.error ?? `Request failed (${res.status})`);
+      }
+
+      const data = await res.json();
+      toast.success("Deal created");
+      onOpenChange(false);
+      onSaved(data.id);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create deal");
+    } finally {
+      setSaving(false);
     }
-
-    toast.success("Deal created");
-    onOpenChange(false);
-    onSaved(data.id);
   }
 
   return (

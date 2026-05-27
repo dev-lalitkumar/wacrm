@@ -113,21 +113,17 @@ export function ContactForm({
     setSaving(true);
 
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const user = session?.user;
-      if (!user) throw new Error('Not authenticated');
-
       let contactId = contact?.id;
 
       if (isEdit && contactId) {
+        // Edit path — direct Supabase update.
+        // source_id is intentionally omitted: it is immutable once set
+        // (DB trigger 017 will reject any change anyway).
         const updates: Record<string, unknown> = {
           name: name.trim() || null,
           phone: phone.trim(),
           email: email.trim() || null,
           company: company.trim() || null,
-          source_id: sourceId || null,
           updated_at: new Date().toISOString(),
         };
         // Only roles that can reassign send `assigned_to`. Sending it
@@ -142,23 +138,33 @@ export function ContactForm({
           .eq('id', contactId);
         if (error) throw error;
       } else {
-        const insertPayload: Record<string, unknown> = {
-          user_id: user.id,
-          name: name.trim() || null,
+        // Create path — go through the API route so all business logic
+        // (normalisation, source validation, default assignment) lives
+        // in a single server-side function.
+        if (!sourceId) {
+          toast.error('Source is required');
+          return;
+        }
+        const body: Record<string, unknown> = {
           phone: phone.trim(),
+          name: name.trim() || null,
           email: email.trim() || null,
           company: company.trim() || null,
-          source_id: sourceId || null,
+          source_id: sourceId,
         };
         if (canAssign && assignedTo) {
-          insertPayload.assigned_to = assignedTo;
+          body.assigned_to = assignedTo;
         }
-        const { data, error } = await supabase
-          .from('contacts')
-          .insert(insertPayload)
-          .select('id')
-          .single();
-        if (error) throw error;
+        const res = await fetch('/api/contacts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const payload = await res.json().catch(() => ({}));
+          throw new Error(payload?.error ?? `Request failed (${res.status})`);
+        }
+        const data = await res.json();
         contactId = data.id;
       }
 
@@ -263,12 +269,15 @@ export function ContactForm({
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="cf-source" className="text-slate-300">
-              Source
-            </Label>
-            <SourceSelect value={sourceId} onChange={setSourceId} />
-          </div>
+          {/* Source is immutable after creation — show selector only on create */}
+          {!isEdit && (
+            <div className="space-y-2">
+              <Label htmlFor="cf-source" className="text-slate-300">
+                Source
+              </Label>
+              <SourceSelect value={sourceId} onChange={setSourceId} />
+            </div>
+          )}
 
           {canAssign && (
             <div className="space-y-2">

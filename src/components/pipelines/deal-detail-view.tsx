@@ -32,7 +32,6 @@ import { timeAgo } from "@/lib/utils";
 import { ActivityHistory } from "@/components/shared/activity-history";
 import { ContactInfoCard } from "@/components/shared/contact-info-card";
 import { QuickFollowup } from "@/components/shared/quick-followup";
-import { SourceSelect } from "@/components/shared/source-select";
 import { CollapsibleSection } from "@/components/shared/collapsible-section";
 import { DealReminderSection } from "./deal-reminder-section";
 
@@ -157,7 +156,6 @@ export function DealDetailView({
   const [formAssignedTo, setFormAssignedTo] = useState("");
   const [formCloseDate, setFormCloseDate] = useState("");
   const [formNotes, setFormNotes] = useState("");
-  const [formSourceId, setFormSourceId] = useState<string | null>(null);
   const [formDealCustomData, setFormDealCustomData] = useState<Record<string, unknown>>({});
   const [formContactName, setFormContactName] = useState("");
   const [formContactPhone, setFormContactPhone] = useState("");
@@ -275,7 +273,6 @@ export function DealDetailView({
     setFormAssignedTo(deal.assigned_to ?? "");
     setFormCloseDate(deal.expected_close_date ?? "");
     setFormNotes(deal.notes ?? "");
-    setFormSourceId(deal.source_id ?? null);
     setFormDealCustomData((deal.custom_data ?? {}) as Record<string, unknown>);
     if (deal.contact) {
       setFormContactName(deal.contact.name ?? "");
@@ -330,7 +327,7 @@ export function DealDetailView({
         assigned_to: formAssignedTo || null,
         expected_close_date: formCloseDate || null,
         notes: formNotes.trim() || null,
-        source_id: formSourceId || null,
+        // source_id intentionally omitted — immutable after creation (DB trigger 017)
         custom_data: formDealCustomData,
       })
       .eq("id", deal.id);
@@ -1041,11 +1038,6 @@ export function DealDetailView({
                       placeholder="Add notes…"
                       className="min-h-[80px] border-slate-700 bg-slate-800 text-white"
                     />
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label className="text-slate-300 text-xs">Source</Label>
-                    <SourceSelect value={formSourceId} onChange={setFormSourceId} />
                   </div>
 
                   {/* Deal custom fields — visually identical to standard fields above */}

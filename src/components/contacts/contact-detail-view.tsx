@@ -9,7 +9,6 @@ import type { Contact, Tag, CustomField, Profile } from '@/types';
 import { QuickFollowup } from '@/components/shared/quick-followup';
 import { ActivityHistory } from '@/components/shared/activity-history';
 import { ContactInfoCard } from '@/components/shared/contact-info-card';
-import { SourceSelect } from '@/components/shared/source-select';
 import { CollapsibleSection } from '@/components/shared/collapsible-section';
 import {
   Sheet,
@@ -65,7 +64,6 @@ export function ContactDetailView({
   const [editEmail, setEditEmail] = useState('');
   const [editCompany, setEditCompany] = useState('');
   const [editAssignedTo, setEditAssignedTo] = useState('');
-  const [editSourceId, setEditSourceId] = useState<string | null>(null);
   const [editCustomData, setEditCustomData] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
 
@@ -153,7 +151,6 @@ export function ContactDetailView({
       setEditEmail(c.email ?? '');
       setEditCompany(c.company ?? '');
       setEditAssignedTo(c.assigned_to ?? '');
-      setEditSourceId(c.source_id ?? null);
       setEditCustomData((c.custom_data ?? {}) as Record<string, unknown>);
     }
 
@@ -244,7 +241,7 @@ export function ContactDetailView({
       phone: editPhone.trim(),
       email: editEmail.trim() || null,
       company: editCompany.trim() || null,
-      source_id: editSourceId || null,
+      // source_id intentionally omitted — immutable after creation (DB trigger 017)
       custom_data: editCustomData,
       updated_at: new Date().toISOString(),
     };
@@ -650,11 +647,6 @@ export function ContactDetailView({
                     onChange={(e) => setEditCompany(e.target.value)}
                     className="border-slate-700 bg-slate-800 text-white"
                   />
-                </div>
-
-                <div className="grid gap-2">
-                  <Label className="text-slate-300 text-xs">Source</Label>
-                  <SourceSelect value={editSourceId} onChange={setEditSourceId} />
                 </div>
 
                 {canAssign && (
