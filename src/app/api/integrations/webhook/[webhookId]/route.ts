@@ -219,9 +219,8 @@ export async function POST(
     const { data: newContact, error: insErr } = await admin
       .from('contacts')
       .insert({
-        // Audit-only — there's no signed-in user for webhook inserts.
-        // Use the webhook creator's user_id when known, else NULL.
-        user_id: null,
+        // user_id is nullable (see migration 016) — no signed-in user for
+        // webhook inserts; NULL correctly signals "created by automation".
         phone: normalizedPhone,
         name: mapped.contact.standard.name ?? null,
         email: mapped.contact.standard.email ?? null,
@@ -268,7 +267,7 @@ export async function POST(
       notes: mapped.deal.standard.notes ?? null,
       expected_close_date: mapped.deal.standard.expected_close_date ?? null,
       source_id: webhook.source_id,
-      user_id: null,
+      // user_id omitted — nullable after migration 016; NULL = created by automation
       status: 'open',
       custom_data:
         Object.keys(mapped.deal.custom_data).length > 0
