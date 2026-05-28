@@ -6,7 +6,8 @@ import {
   encryptSecret,
   secretPrefix,
 } from '@/lib/integrations/secret'
-import type { WebhookFieldMappings } from '@/types'
+import { FIXED_PIPELINE_ID } from '@/lib/pipeline/constants'
+import type { WebhookFieldMappings, PipelineStage } from '@/types'
 
 // ============================================================
 // POST /api/integrations/webhooks
@@ -15,6 +16,9 @@ import type { WebhookFieldMappings } from '@/types'
 // The raw secret is returned ONCE in the response body so the dialog
 // can show it for copy. The DB only ever stores the encrypted form
 // plus an 8-char prefix for display.
+//
+// Pipeline + stage are auto-resolved: every webhook uses the fixed
+// pipeline and its first stage (position = 1, i.e. "New").
 // ============================================================
 export async function POST(request: Request) {
   const caller = await requireRole(['admin'])
@@ -24,9 +28,6 @@ export async function POST(request: Request) {
     name?: string
     source_id?: string
     is_active?: boolean
-    creates_deal?: boolean
-    pipeline_id?: string | null
-    stage_id?: string | null
     field_mappings?: WebhookFieldMappings
     round_robin_override?: boolean
     round_robin_member_ids?: string[]
@@ -42,12 +43,6 @@ export async function POST(request: Request) {
   if (!body.source_id) {
     return NextResponse.json({ error: 'Source is required' }, { status: 400 })
   }
-  if (body.creates_deal && (!body.pipeline_id || !body.stage_id)) {
-    return NextResponse.json(
-      { error: 'Pipeline and stage are required when creating deals' },
-      { status: 400 },
-    )
-  }
   const limit = body.rate_limit_per_minute ?? 60
   if (!Number.isInteger(limit) || limit < 1) {
     return NextResponse.json(
@@ -56,19 +51,37 @@ export async function POST(request: Request) {
     )
   }
 
+  // Auto-resolve the first stage of the fixed pipeline
+  const admin = supabaseAdmin()
+  const { data: firstStage, error: stageErr } = await admin
+    .from('pipeline_stages')
+    .select('id')
+    .eq('pipeline_id', FIXED_PIPELINE_ID)
+    .order('position', { ascending: true })
+    .limit(1)
+    .single()
+
+  if (stageErr || !firstStage) {
+    console.error('[webhooks] failed to resolve first stage:', stageErr?.message)
+    return NextResponse.json(
+      { error: 'Could not resolve pipeline stage' },
+      { status: 500 },
+    )
+  }
+
   const rawSecret = generateSecret()
   const encrypted = encryptSecret(rawSecret)
   const prefix = secretPrefix(rawSecret)
 
-  const { data, error } = await supabaseAdmin()
+  const { data, error } = await admin
     .from('webhooks')
     .insert({
       name: body.name.trim(),
       source_id: body.source_id,
       is_active: body.is_active ?? true,
-      creates_deal: body.creates_deal ?? false,
-      pipeline_id: body.creates_deal ? body.pipeline_id : null,
-      stage_id: body.creates_deal ? body.stage_id : null,
+      creates_deal: true,
+      pipeline_id: FIXED_PIPELINE_ID,
+      stage_id: (firstStage as PipelineStage).id,
       field_mappings: body.field_mappings ?? {},
       round_robin_override: body.round_robin_override ?? false,
       round_robin_member_ids: body.round_robin_member_ids ?? [],

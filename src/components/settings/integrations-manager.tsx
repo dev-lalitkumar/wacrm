@@ -12,8 +12,6 @@ import type {
   RoundRobinConfig,
   Source,
   Webhook,
-  PipelineStage,
-  Pipeline,
 } from '@/types'
 import { Button } from '@/components/ui/button'
 import {
@@ -40,8 +38,6 @@ export function IntegrationsManager() {
   // ─── Loaded data ────────────────────────────────────────────────
   const [webhooks, setWebhooks] = useState<Webhook[]>([])
   const [sources, setSources] = useState<Source[]>([])
-  const [pipelines, setPipelines] = useState<Pipeline[]>([])
-  const [stages, setStages] = useState<PipelineStage[]>([])
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [rrConfig, setRrConfig] = useState<RoundRobinConfig | null>(null)
   const [loading, setLoading] = useState(true)
@@ -64,14 +60,12 @@ export function IntegrationsManager() {
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
-    const [whRes, srcRes, plRes, stRes, profRes, rrRes] = await Promise.all([
+    const [whRes, srcRes, profRes, rrRes] = await Promise.all([
       supabase
         .from('webhooks')
         .select('*, source:sources(id, name, key), pipeline:pipelines(id, name), stage:pipeline_stages(id, name, color)')
         .order('created_at', { ascending: false }),
       supabase.from('sources').select('*').order('sort_order'),
-      supabase.from('pipelines').select('*').order('name'),
-      supabase.from('pipeline_stages').select('*').order('position'),
       supabase
         .from('profiles')
         .select('id, full_name, email, role, is_active, created_at, user_id')
@@ -82,8 +76,6 @@ export function IntegrationsManager() {
 
     setWebhooks((whRes.data ?? []) as Webhook[])
     setSources((srcRes.data ?? []) as Source[])
-    setPipelines((plRes.data ?? []) as Pipeline[])
-    setStages((stRes.data ?? []) as PipelineStage[])
     setProfiles((profRes.data ?? []) as Profile[])
 
     const rr = (rrRes.data ?? null) as RoundRobinConfig | null
@@ -361,8 +353,6 @@ export function IntegrationsManager() {
         onOpenChange={setFormOpen}
         webhook={editingWebhook}
         sources={sources}
-        pipelines={pipelines}
-        stages={stages}
         profiles={profiles}
         onSaved={(newId, rawSecret) => {
           fetchAll()
