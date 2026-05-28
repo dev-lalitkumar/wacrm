@@ -58,6 +58,15 @@ function isTabValue(v: string | null): v is TabValue {
   return !!v && (TAB_VALUES as readonly string[]).includes(v);
 }
 
+/* Section heading inside the vertical nav */
+function NavSection({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="hidden md:block px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-500 select-none first:pt-0">
+      {children}
+    </span>
+  );
+}
+
 export default function SettingsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -100,173 +109,154 @@ export default function SettingsPage() {
     router.replace(`/settings?${params.toString()}`, { scroll: false });
   };
 
+  const triggerCls =
+    'justify-start gap-2.5 rounded-lg px-3 py-2 text-sm text-slate-400 transition-colors hover:bg-slate-800/50 hover:text-slate-200 data-active:bg-slate-800 data-active:text-primary';
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-white">Settings</h1>
         <p className="text-sm text-slate-400 mt-1">
-          Manage your profile, WhatsApp® integration, message templates, and
-          tags.
+          Manage your profile, integrations, message templates, and more.
         </p>
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => onChange(v as TabValue)}>
-        <TabsList className="bg-slate-900 border border-slate-700">
-          <TabsTrigger
-            value="profile"
-            className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
-          >
-            <User className="size-4" />
+      {/* ── Vertical sidebar on md+, horizontal scroll on mobile ── */}
+      <Tabs
+        value={tab}
+        onValueChange={(v) => onChange(v as TabValue)}
+        orientation="vertical"
+        className="!flex-row"
+      >
+        {/* ── Left nav ─────────────────────────────────────────── */}
+        <TabsList className="shrink-0 gap-0.5 overflow-x-auto border-slate-800 bg-transparent md:w-48 md:flex-col md:items-stretch md:overflow-visible md:border-r md:pr-4">
+          <NavSection>Account</NavSection>
+          <TabsTrigger value="profile" className={triggerCls}>
+            <User className="size-4 shrink-0" />
             Profile
           </TabsTrigger>
           {showCompany && (
-            <TabsTrigger
-              value="company"
-              className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
-            >
-              <Building2 className="size-4" />
+            <TabsTrigger value="company" className={triggerCls}>
+              <Building2 className="size-4 shrink-0" />
               Company
             </TabsTrigger>
           )}
           {showTeam && (
-            <TabsTrigger
-              value="team"
-              className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
-            >
-              <Users className="size-4" />
+            <TabsTrigger value="team" className={triggerCls}>
+              <Users className="size-4 shrink-0" />
               Team
             </TabsTrigger>
           )}
+          <TabsTrigger value="appearance" className={triggerCls}>
+            <Palette className="size-4 shrink-0" />
+            Appearance
+          </TabsTrigger>
+
+          <NavSection>CRM</NavSection>
           {showCustomFields && (
-            <TabsTrigger
-              value="custom-fields"
-              className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
-            >
-              <LayoutList className="size-4" />
+            <TabsTrigger value="custom-fields" className={triggerCls}>
+              <LayoutList className="size-4 shrink-0" />
               Custom Fields
             </TabsTrigger>
           )}
-          <TabsTrigger
-            value="lost-reasons"
-            className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
-          >
-            <XCircle className="size-4" />
+          <TabsTrigger value="lost-reasons" className={triggerCls}>
+            <XCircle className="size-4 shrink-0" />
             Lost Reasons
           </TabsTrigger>
-          <TabsTrigger
-            value="sources"
-            className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
-          >
-            <Tag className="size-4" />
+          <TabsTrigger value="sources" className={triggerCls}>
+            <Tag className="size-4 shrink-0" />
             Sources
           </TabsTrigger>
-          {showIntegrations && (
-            <TabsTrigger
-              value="integrations"
-              className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
-            >
-              <WebhookIcon className="size-4" />
-              Integrations
-            </TabsTrigger>
-          )}
-          <TabsTrigger
-            value="whatsapp"
-            className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
-          >
-            <Settings className="size-4" />
-            WhatsApp Config
+          <TabsTrigger value="tags" className={triggerCls}>
+            <Tag className="size-4 shrink-0" />
+            Tags
+          </TabsTrigger>
+          <TabsTrigger value="templates" className={triggerCls}>
+            <MessageSquare className="size-4 shrink-0" />
+            Templates
+          </TabsTrigger>
+
+          <NavSection>Channels</NavSection>
+          <TabsTrigger value="whatsapp" className={triggerCls}>
+            <Settings className="size-4 shrink-0" />
+            WhatsApp
           </TabsTrigger>
           {showEmail && (
-            <TabsTrigger
-              value="email"
-              className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
-            >
-              <Mail className="size-4" />
+            <TabsTrigger value="email" className={triggerCls}>
+              <Mail className="size-4 shrink-0" />
               Email
             </TabsTrigger>
           )}
-          <TabsTrigger
-            value="templates"
-            className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
-          >
-            <MessageSquare className="size-4" />
-            Templates
-          </TabsTrigger>
-          <TabsTrigger
-            value="tags"
-            className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
-          >
-            <Tag className="size-4" />
-            Tags
-          </TabsTrigger>
-          <TabsTrigger
-            value="appearance"
-            className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
-          >
-            <Palette className="size-4" />
-            Appearance
-          </TabsTrigger>
+          {showIntegrations && (
+            <TabsTrigger value="integrations" className={triggerCls}>
+              <WebhookIcon className="size-4 shrink-0" />
+              Integrations
+            </TabsTrigger>
+          )}
         </TabsList>
 
-        <TabsContent value="profile" className="space-y-6">
-          <ProfileForm />
-          <PasswordForm />
-          <SessionsCard />
-        </TabsContent>
-
-        {showCompany && (
-          <TabsContent value="company" className="space-y-6">
-            <CompanyForm />
+        {/* ── Content area ─────────────────────────────────────── */}
+        <div className="min-w-0 flex-1">
+          <TabsContent value="profile" className="space-y-6">
+            <ProfileForm />
+            <PasswordForm />
+            <SessionsCard />
           </TabsContent>
-        )}
 
-        {showTeam && (
-          <TabsContent value="team">
-            <TeamManager />
+          {showCompany && (
+            <TabsContent value="company" className="space-y-6">
+              <CompanyForm />
+            </TabsContent>
+          )}
+
+          {showTeam && (
+            <TabsContent value="team">
+              <TeamManager />
+            </TabsContent>
+          )}
+
+          <TabsContent value="appearance">
+            <AppearancePanel />
           </TabsContent>
-        )}
 
-        {showCustomFields && (
-          <TabsContent value="custom-fields" className="space-y-6">
-            <CustomFieldsManager />
+          {showCustomFields && (
+            <TabsContent value="custom-fields" className="space-y-6">
+              <CustomFieldsManager />
+            </TabsContent>
+          )}
+
+          <TabsContent value="lost-reasons" className="space-y-6">
+            <LostReasonsManager />
           </TabsContent>
-        )}
 
-        <TabsContent value="lost-reasons" className="space-y-6">
-          <LostReasonsManager />
-        </TabsContent>
-
-        <TabsContent value="sources" className="space-y-6">
-          <SourcesManager />
-        </TabsContent>
-
-        {showIntegrations && (
-          <TabsContent value="integrations" className="space-y-6">
-            <IntegrationsManager />
+          <TabsContent value="sources" className="space-y-6">
+            <SourcesManager />
           </TabsContent>
-        )}
 
-        <TabsContent value="whatsapp">
-          <WhatsAppConfig />
-        </TabsContent>
-
-        {showEmail && (
-          <TabsContent value="email" className="space-y-6">
-            <GmailConfig />
+          <TabsContent value="tags">
+            <TagManager />
           </TabsContent>
-        )}
 
-        <TabsContent value="templates">
-          <TemplateManager />
-        </TabsContent>
+          <TabsContent value="templates">
+            <TemplateManager />
+          </TabsContent>
 
-        <TabsContent value="tags">
-          <TagManager />
-        </TabsContent>
+          <TabsContent value="whatsapp">
+            <WhatsAppConfig />
+          </TabsContent>
 
-        <TabsContent value="appearance">
-          <AppearancePanel />
-        </TabsContent>
+          {showEmail && (
+            <TabsContent value="email" className="space-y-6">
+              <GmailConfig />
+            </TabsContent>
+          )}
+
+          {showIntegrations && (
+            <TabsContent value="integrations" className="space-y-6">
+              <IntegrationsManager />
+            </TabsContent>
+          )}
+        </div>
       </Tabs>
     </div>
   );
