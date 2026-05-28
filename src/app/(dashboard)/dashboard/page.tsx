@@ -30,10 +30,13 @@ import { WonLostChart } from '@/components/main-dashboard/won-lost-chart'
 import { UpcomingReminders } from '@/components/main-dashboard/upcoming-reminders'
 import { RecentFollowups } from '@/components/main-dashboard/recent-followups'
 import { TeamLeaderboard } from '@/components/main-dashboard/team-leaderboard'
+import { EmailNotifications } from '@/components/main-dashboard/email-notifications'
+import { useGmailStatus } from '@/hooks/use-gmail-status'
 
 export default function DashboardPage() {
   const { profile } = useAuth()
   const showTeam = canViewTeamReports(profile?.role)
+  const gmail = useGmailStatus()
 
   const [metrics, setMetrics] = useState<CrmMetricsBundle | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
@@ -165,6 +168,9 @@ export default function DashboardPage() {
         <UpcomingReminders data={reminders} loading={remindersLoading} />
         <RecentFollowups data={followups} loading={followupsLoading} />
       </div>
+
+      {/* Email Notifications — only when Gmail connected */}
+      <EmailNotifications connected={gmail.connected} />
 
       {/* Team Leaderboard — admin/owner/manager only */}
       {showTeam && (

@@ -10,6 +10,8 @@ import { QuickFollowup } from '@/components/shared/quick-followup';
 import { ActivityHistory } from '@/components/shared/activity-history';
 import { ContactInfoCard } from '@/components/shared/contact-info-card';
 import { CollapsibleSection } from '@/components/shared/collapsible-section';
+import { ComposeEmailDialog } from '@/components/email/compose-dialog';
+import { useGmailStatus } from '@/hooks/use-gmail-status';
 import {
   Sheet,
   SheetContent,
@@ -48,6 +50,8 @@ export function ContactDetailView({
   const supabase = createClient();
   const { profile } = useAuth();
   const canAssign = canAssignContacts(profile?.role ?? null);
+  const gmail = useGmailStatus();
+  const [emailComposeOpen, setEmailComposeOpen] = useState(false);
 
   // ─── Loaded data ────────────────────────────────────────────────────────────
   const [contact, setContact] = useState<Contact | null>(null);
@@ -455,6 +459,15 @@ export function ContactDetailView({
                       <span className="flex items-center gap-1">
                         <Mail className="size-3" />
                         {contact.email}
+                        {gmail.connected && (
+                          <button
+                            type="button"
+                            onClick={() => setEmailComposeOpen(true)}
+                            className="ml-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-primary bg-primary/10 hover:bg-primary/20 transition-colors cursor-pointer"
+                          >
+                            Send Email
+                          </button>
+                        )}
                       </span>
                     )}
                   </div>
@@ -527,6 +540,7 @@ export function ContactDetailView({
                       entityId={contactId}
                       onSaved={() => { fetchAll(); }}
                       showHistory={false}
+                      onComposeEmail={contact?.email ? () => setEmailComposeOpen(true) : undefined}
                     />
                   </CollapsibleSection>
                 )}
@@ -729,6 +743,19 @@ export function ContactDetailView({
           </div>
         )}
       </SheetContent>
+
+      {/* Email compose dialog */}
+      {contact && (
+        <ComposeEmailDialog
+          open={emailComposeOpen}
+          onClose={() => setEmailComposeOpen(false)}
+          contact={{
+            id: contact.id,
+            name: contact.name ?? undefined,
+            email: contact.email ?? undefined,
+          }}
+        />
+      )}
     </Sheet>
   );
 }

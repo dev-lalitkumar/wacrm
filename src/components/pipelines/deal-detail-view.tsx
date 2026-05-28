@@ -35,7 +35,9 @@ import { QuickFollowup } from "@/components/shared/quick-followup";
 import { CollapsibleSection } from "@/components/shared/collapsible-section";
 import { DealReminderSection } from "./deal-reminder-section";
 import { MarkLostDialog } from "./mark-lost-dialog";
+import { ComposeEmailDialog } from "@/components/email/compose-dialog";
 import { reminderStatus } from "@/lib/deals/reminder-status";
+import { Mail } from "lucide-react";
 
 interface DealDetailViewProps {
   open: boolean;
@@ -106,6 +108,7 @@ export function DealDetailView({
   // ─── UI state ──────────────────────────────────────────────────────────────
   const [statusActing, setStatusActing] = useState<"won" | "lost" | "open" | null>(null);
   const [markLostOpen, setMarkLostOpen] = useState(false);
+  const [emailComposeOpen, setEmailComposeOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -837,6 +840,18 @@ export function DealDetailView({
                     )}
                   </div>
 
+                  {/* ── Send Email ──────────────────────────────────── */}
+                  {deal.contact?.email && (
+                    <button
+                      type="button"
+                      onClick={() => setEmailComposeOpen(true)}
+                      className="flex w-full items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-700 hover:text-white cursor-pointer"
+                    >
+                      <Mail className="size-3.5" />
+                      Send Email to {deal.contact.name || deal.contact.email}
+                    </button>
+                  )}
+
                   {/* ── Followup — collapsible ─────────────────────── */}
                   <CollapsibleSection
                     title="Followup"
@@ -849,6 +864,7 @@ export function DealDetailView({
                       entityId={deal.id}
                       onSaved={() => { fetchAll(); }}
                       showHistory={false}
+                      onComposeEmail={deal.contact?.email ? () => setEmailComposeOpen(true) : undefined}
                     />
                   </CollapsibleSection>
 
@@ -1169,6 +1185,27 @@ export function DealDetailView({
         onOpenChange={setMarkLostOpen}
         onConfirm={handleConfirmLost}
       />
+
+      {/* Email compose dialog */}
+      {deal && (
+        <ComposeEmailDialog
+          open={emailComposeOpen}
+          onClose={() => setEmailComposeOpen(false)}
+          contact={
+            deal.contact
+              ? { id: deal.contact.id, name: deal.contact.name, email: deal.contact.email }
+              : undefined
+          }
+          deal={{
+            id: deal.id,
+            title: deal.title,
+            value: deal.value,
+            currency: deal.currency,
+            stageName: deal.stage?.name,
+          }}
+          onSent={() => fetchAll()}
+        />
+      )}
     </Sheet>
   );
 }

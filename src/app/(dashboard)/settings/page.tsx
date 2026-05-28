@@ -12,6 +12,7 @@ import {
   Webhook as WebhookIcon,
   XCircle,
   Building2,
+  Mail,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
@@ -27,12 +28,14 @@ import { LostReasonsManager } from '@/components/settings/lost-reasons-manager';
 import { SourcesManager } from '@/components/settings/sources-manager';
 import { IntegrationsManager } from '@/components/settings/integrations-manager';
 import { CompanyForm } from '@/components/settings/company-form';
+import { GmailConfig } from '@/components/settings/gmail-config';
 import { useAuth } from '@/hooks/use-auth';
 import {
   canManageTeam,
   canManageCustomFields,
   canViewWebhooks,
   canManageCompany,
+  canManageEmailConfig,
 } from '@/lib/auth/permissions';
 
 const TAB_VALUES = [
@@ -44,6 +47,7 @@ const TAB_VALUES = [
   'sources',
   'integrations',
   'whatsapp',
+  'email',
   'templates',
   'tags',
   'appearance',
@@ -64,6 +68,7 @@ export default function SettingsPage() {
   // Sources tab is visible to everyone (read-only for non-admins).
   // Integrations tab is admin/owner/manager only.
   const showIntegrations = canViewWebhooks(profile?.role ?? null);
+  const showEmail = canManageEmailConfig(profile?.role ?? null);
 
   // The URL is the single source of truth for the active tab — no
   // local state, no sync effect. A previous revision duplicated this
@@ -83,6 +88,9 @@ export default function SettingsPage() {
     tab = 'profile';
   }
   if (tab === 'company' && !showCompany) {
+    tab = 'profile';
+  }
+  if (tab === 'email' && !showEmail) {
     tab = 'profile';
   }
 
@@ -168,6 +176,15 @@ export default function SettingsPage() {
             <Settings className="size-4" />
             WhatsApp Config
           </TabsTrigger>
+          {showEmail && (
+            <TabsTrigger
+              value="email"
+              className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
+            >
+              <Mail className="size-4" />
+              Email
+            </TabsTrigger>
+          )}
           <TabsTrigger
             value="templates"
             className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
@@ -232,6 +249,12 @@ export default function SettingsPage() {
         <TabsContent value="whatsapp">
           <WhatsAppConfig />
         </TabsContent>
+
+        {showEmail && (
+          <TabsContent value="email" className="space-y-6">
+            <GmailConfig />
+          </TabsContent>
+        )}
 
         <TabsContent value="templates">
           <TemplateManager />

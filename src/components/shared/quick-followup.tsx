@@ -25,9 +25,11 @@ interface QuickFollowupProps {
   onSaved?: () => void;
   /** When false, hides the recent-history list. Defaults to true. */
   showHistory?: boolean;
+  /** Callback to open the email compose dialog. Shown when email channel is selected. */
+  onComposeEmail?: () => void;
 }
 
-export function QuickFollowup({ entityType, entityId, onSaved, showHistory = true }: QuickFollowupProps) {
+export function QuickFollowup({ entityType, entityId, onSaved, showHistory = true, onComposeEmail }: QuickFollowupProps) {
   const supabase = createClient();
 
   const [channel, setChannel] = useState<FollowupChannel | "">("");
@@ -125,15 +127,26 @@ export function QuickFollowup({ entityType, entityId, onSaved, showHistory = tru
         className="min-h-[72px] resize-none border-slate-700 bg-slate-800 text-sm text-white placeholder:text-slate-500"
       />
 
-      <Button
-        onClick={handleSave}
-        disabled={!channel || !note.trim() || saving}
-        size="sm"
-        className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-      >
-        {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
-        Save Follow-up
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button
+          onClick={handleSave}
+          disabled={!channel || !note.trim() || saving}
+          size="sm"
+          className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        >
+          {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
+          Save Follow-up
+        </Button>
+        {channel === "email" && onComposeEmail && (
+          <button
+            type="button"
+            onClick={onComposeEmail}
+            className="text-xs text-primary hover:underline cursor-pointer"
+          >
+            ✉️ Compose &amp; Send
+          </button>
+        )}
+      </div>
 
       {/* History — hidden when showHistory=false */}
       {showHistory && (

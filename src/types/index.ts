@@ -184,6 +184,53 @@ export interface MessageReaction {
   created_at: string;
 }
 
+// ============================================================
+// Gmail Integration (migration 020)
+// ============================================================
+
+/** Singleton Gmail config — id is always 1. */
+export interface GmailConfig {
+  id: number;
+  connected_email: string | null;
+  status: 'connected' | 'disconnected' | 'error';
+  scopes: string[] | null;
+  connected_at: string | null;
+  updated_at: string;
+}
+
+export interface EmailLog {
+  id: string;
+  gmail_message_id: string | null;
+  gmail_thread_id: string | null;
+  from_email: string;
+  to_emails: string[];
+  cc_emails: string[] | null;
+  bcc_emails: string[] | null;
+  subject: string;
+  body_text: string | null;
+  body_html: string | null;
+  contact_id: string | null;
+  deal_id: string | null;
+  sent_by: string;
+  status: 'sending' | 'sent' | 'failed' | 'bounced';
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface EmailNotification {
+  id: string;
+  gmail_message_id: string;
+  gmail_thread_id: string | null;
+  from_email: string;
+  from_name: string | null;
+  subject: string | null;
+  snippet: string | null;
+  contact_id: string | null;
+  is_read: boolean;
+  received_at: string;
+  contact?: Contact;
+}
+
 export interface WhatsAppConfig {
   id: string;
   user_id: string;
