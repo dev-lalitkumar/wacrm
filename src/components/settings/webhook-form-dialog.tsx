@@ -22,7 +22,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2, Check, Sparkles } from 'lucide-react'
+import { Loader2, Check, Sparkles, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface WebhookFormDialogProps {
@@ -45,21 +45,61 @@ interface WebhookFormDialogProps {
 // ─── Standard slot definitions ──────────────────────────────────
 //
 // Keys here line up with the JSONB shape declared on WebhookFieldMappings
-// (see types/index.ts). Phone is marked required at the UI level — a
-// contact insert without a phone breaks the contact-form contract.
-const CONTACT_STANDARD_SLOTS: { slot: string; label: string; required?: boolean }[] = [
-  { slot: 'name',    label: 'Name' },
-  { slot: 'phone',   label: 'Phone', required: true },
-  { slot: 'email',   label: 'Email' },
-  { slot: 'company', label: 'Company' },
+// (see types/index.ts). Every standard field is required — the user
+// must provide a mapping path for it. The `defaultKey` is the sensible
+// default dot-notation path that most webhook payloads use.
+const CONTACT_STANDARD_SLOTS: {
+  slot: string
+  label: string
+  defaultKey: string
+  required: boolean
+}[] = [
+  { slot: 'name',    label: 'Name',    defaultKey: 'name',    required: true },
+  { slot: 'phone',   label: 'Phone',   defaultKey: 'phone',   required: true },
+  { slot: 'email',   label: 'Email',   defaultKey: 'email',   required: true },
+  { slot: 'company', label: 'Company', defaultKey: 'company', required: true },
 ]
 
-const DEAL_STANDARD_SLOTS: { slot: string; label: string }[] = [
-  { slot: 'title',                label: 'Title' },
-  { slot: 'value',                label: 'Value' },
-  { slot: 'notes',                label: 'Notes' },
-  { slot: 'expected_close_date',  label: 'Expected close date' },
+const DEAL_STANDARD_SLOTS: {
+  slot: string
+  label: string
+  defaultKey: string
+  required: boolean
+}[] = [
+  { slot: 'title',               label: 'Title',               defaultKey: 'title',               required: true },
+  { slot: 'value',               label: 'Value',               defaultKey: 'value',               required: true },
+  { slot: 'notes',               label: 'Notes',               defaultKey: 'notes',               required: true },
+  { slot: 'expected_close_date', label: 'Expected close date', defaultKey: 'expected_close_date', required: true },
 ]
+
+/** Derive a default mapping key from a custom field name, e.g. "Full Name" → "full_name" */
+function defaultKeyForCustomField(fieldName: string): string {
+  return fieldName.toLowerCase().replace(/\s+/g, '_')
+}
+
+/** Build the default flat mapping for all standard contact + deal slots. */
+function buildDefaultMappings(
+  includeDeal: boolean,
+  contactCFs: CustomField[] = [],
+  dealCFs: CustomField[] = [],
+): Record<string, string> {
+  const m: Record<string, string> = {}
+  for (const s of CONTACT_STANDARD_SLOTS) {
+    m[`contact.${s.slot}`] = s.defaultKey
+  }
+  for (const f of contactCFs) {
+    m[`contact.cf:${f.id}`] = defaultKeyForCustomField(f.field_name)
+  }
+  if (includeDeal) {
+    for (const s of DEAL_STANDARD_SLOTS) {
+      m[`deal.${s.slot}`] = s.defaultKey
+    }
+    for (const f of dealCFs) {
+      m[`deal.cf:${f.id}`] = defaultKeyForCustomField(f.field_name)
+    }
+  }
+  return m
+}
 
 export function WebhookFormDialog({
   open,
@@ -95,6 +135,7 @@ export function WebhookFormDialog({
   // Pipeline → stages filter for the stage select
   const stagesForPipeline = stages.filter((s) => s.pipeline_id === pipelineId)
 
+  /** Load custom fields and return them (also sets state). */
   const loadCustomFields = useCallback(async () => {
     const [cRes, dRes] = await Promise.all([
       supabase
@@ -108,51 +149,84 @@ export function WebhookFormDialog({
         .eq('applies_to', 'deal')
         .order('sort_order'),
     ])
-    setContactCustomFields((cRes.data ?? []) as CustomField[])
-    setDealCustomFields((dRes.data ?? []) as CustomField[])
+    const cfs = (cRes.data ?? []) as CustomField[]
+    const dfs = (dRes.data ?? []) as CustomField[]
+    setContactCustomFields(cfs)
+    setDealCustomFields(dfs)
+    return { contactCFs: cfs, dealCFs: dfs }
   }, [supabase])
 
-  // Reset / hydrate when dialog opens or webhook changes
+  // Reset / hydrate when dialog opens or webhook changes.
+  // Custom fields are loaded first so defaults include them.
   useEffect(() => {
     if (!open) return
-    loadCustomFields()
 
-    if (webhook) {
-      setName(webhook.name)
-      setSourceId(webhook.source_id)
-      setIsActive(webhook.is_active)
-      setCreatesDeal(webhook.creates_deal)
-      setPipelineId(webhook.pipeline_id ?? '')
-      setStageId(webhook.stage_id ?? '')
-      setRrOverride(webhook.round_robin_override)
-      setRrMembers(webhook.round_robin_member_ids ?? [])
-      setRateLimit(String(webhook.rate_limit_per_minute))
+    async function hydrate() {
+      const { contactCFs, dealCFs } = await loadCustomFields()
 
-      // Flatten the stored nested shape into the flat input map.
-      const flat: Record<string, string> = {}
-      const m = (webhook.field_mappings ?? {}) as WebhookFieldMappings
-      for (const [slot, path] of Object.entries(m.contact ?? {})) {
-        flat[`contact.${slot}`] = path
+      if (webhook) {
+        setName(webhook.name)
+        setSourceId(webhook.source_id)
+        setIsActive(webhook.is_active)
+        setCreatesDeal(webhook.creates_deal)
+        setPipelineId(webhook.pipeline_id ?? '')
+        setStageId(webhook.stage_id ?? '')
+        setRrOverride(webhook.round_robin_override)
+        setRrMembers(webhook.round_robin_member_ids ?? [])
+        setRateLimit(String(webhook.rate_limit_per_minute))
+
+        // Start from full defaults (standard + custom fields),
+        // then overlay any saved mappings from the webhook.
+        const defaults = buildDefaultMappings(webhook.creates_deal, contactCFs, dealCFs)
+        const flat: Record<string, string> = { ...defaults }
+        const m = (webhook.field_mappings ?? {}) as WebhookFieldMappings
+        for (const [slot, path] of Object.entries(m.contact ?? {})) {
+          flat[`contact.${slot}`] = path
+        }
+        for (const [slot, path] of Object.entries(m.deal ?? {})) {
+          flat[`deal.${slot}`] = path
+        }
+        setMappings(flat)
+      } else {
+        // Defaults for the create path — pre-fill all mappings
+        setName('')
+        setSourceId(sources[0]?.id ?? '')
+        setIsActive(true)
+        setCreatesDeal(false)
+        setPipelineId('')
+        setStageId('')
+        setRrOverride(false)
+        setRrMembers([])
+        setRateLimit('60')
+        setMappings(buildDefaultMappings(false, contactCFs, dealCFs))
       }
-      for (const [slot, path] of Object.entries(m.deal ?? {})) {
-        flat[`deal.${slot}`] = path
-      }
-      setMappings(flat)
-    } else {
-      // Defaults for the create path
-      setName('')
-      setSourceId(sources[0]?.id ?? '')
-      setIsActive(true)
-      setCreatesDeal(false)
-      setPipelineId('')
-      setStageId('')
-      setRrOverride(false)
-      setRrMembers([])
-      setRateLimit('60')
-      setMappings({})
     }
+
+    hydrate()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, webhook, sources])
+
+  // When user toggles "creates deal", ensure deal default mappings are present
+  useEffect(() => {
+    if (createsDeal) {
+      setMappings((prev) => {
+        const withDefaults = { ...prev }
+        for (const s of DEAL_STANDARD_SLOTS) {
+          const key = `deal.${s.slot}`
+          if (!withDefaults[key]) {
+            withDefaults[key] = s.defaultKey
+          }
+        }
+        for (const f of dealCustomFields) {
+          const key = `deal.cf:${f.id}`
+          if (!withDefaults[key]) {
+            withDefaults[key] = defaultKeyForCustomField(f.field_name)
+          }
+        }
+        return withDefaults
+      })
+    }
+  }, [createsDeal, dealCustomFields])
 
   function setMapping(key: string, value: string) {
     setMappings((prev) => ({ ...prev, [key]: value }))
@@ -183,6 +257,28 @@ export function WebhookFormDialog({
     if (!Number.isFinite(limit) || limit < 1) {
       toast.error('Rate limit must be at least 1')
       return
+    }
+
+    // Validate that all required standard fields have a mapping
+    const missingContact = CONTACT_STANDARD_SLOTS.filter(
+      (s) => s.required && !mappings[`contact.${s.slot}`]?.trim(),
+    )
+    if (missingContact.length > 0) {
+      toast.error(
+        `Contact field mapping required: ${missingContact.map((s) => s.label).join(', ')}`,
+      )
+      return
+    }
+    if (createsDeal) {
+      const missingDeal = DEAL_STANDARD_SLOTS.filter(
+        (s) => s.required && !mappings[`deal.${s.slot}`]?.trim(),
+      )
+      if (missingDeal.length > 0) {
+        toast.error(
+          `Deal field mapping required: ${missingDeal.map((s) => s.label).join(', ')}`,
+        )
+        return
+      }
     }
 
     // Re-nest the flat mapping map into the JSONB shape, stripping blanks.
@@ -393,7 +489,8 @@ export function WebhookFormDialog({
                 Field Mapping
               </p>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                For each CRM field, enter the dot-notation path of the matching key in your incoming JSON payload. Leave blank to skip.
+                Map each CRM field to the dot-notation path of the matching key in your incoming JSON payload.
+                All standard fields are required.
               </p>
             </div>
 
@@ -405,6 +502,7 @@ export function WebhookFormDialog({
                   key={`contact.${s.slot}`}
                   label={s.label}
                   required={s.required}
+                  defaultValue={s.defaultKey}
                   value={mappings[`contact.${s.slot}`] ?? ''}
                   onChange={(v) => setMapping(`contact.${s.slot}`, v)}
                 />
@@ -413,6 +511,7 @@ export function WebhookFormDialog({
                 <MappingRow
                   key={`contact.cf:${f.id}`}
                   label={f.field_name}
+                  defaultValue={f.field_name.toLowerCase().replace(/\s+/g, '_')}
                   value={mappings[`contact.cf:${f.id}`] ?? ''}
                   onChange={(v) => setMapping(`contact.cf:${f.id}`, v)}
                 />
@@ -426,6 +525,8 @@ export function WebhookFormDialog({
                   <MappingRow
                     key={`deal.${s.slot}`}
                     label={s.label}
+                    required={s.required}
+                    defaultValue={s.defaultKey}
                     value={mappings[`deal.${s.slot}`] ?? ''}
                     onChange={(v) => setMapping(`deal.${s.slot}`, v)}
                   />
@@ -434,6 +535,7 @@ export function WebhookFormDialog({
                   <MappingRow
                     key={`deal.cf:${f.id}`}
                     label={f.field_name}
+                    defaultValue={f.field_name.toLowerCase().replace(/\s+/g, '_')}
                     value={mappings[`deal.cf:${f.id}`] ?? ''}
                     onChange={(v) => setMapping(`deal.cf:${f.id}`, v)}
                   />
@@ -542,20 +644,25 @@ export function WebhookFormDialog({
   )
 }
 
-// ─── Mapping row — identical visual rhythm for standard + custom fields ─
+// ─── Mapping row — standard + custom fields with reset-to-default ──
 function MappingRow({
   label,
   required,
+  defaultValue,
   value,
   onChange,
 }: {
   label: string
   required?: boolean
+  defaultValue: string
   value: string
   onChange: (v: string) => void
 }) {
+  const isDefault = value === defaultValue
+  const isEmpty = !value.trim()
+
   return (
-    <div className="grid grid-cols-[140px_1fr] gap-3 items-center">
+    <div className="grid grid-cols-[140px_1fr_auto] gap-2 items-center">
       <Label className="text-xs text-slate-300">
         {label}
         {required && <span className="text-red-400 ml-0.5">*</span>}
@@ -563,9 +670,20 @@ function MappingRow({
       <Input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="e.g. fields.full_name"
-        className="bg-slate-900 border-slate-700 text-white text-xs font-mono h-8"
+        placeholder={defaultValue}
+        className={`bg-slate-900 border-slate-700 text-white text-xs font-mono h-8 ${
+          isEmpty && required ? 'border-red-500/50 focus:border-red-500' : ''
+        }`}
       />
+      <button
+        type="button"
+        title={isDefault ? 'Already at default' : `Reset to "${defaultValue}"`}
+        onClick={() => onChange(defaultValue)}
+        disabled={isDefault}
+        className="flex items-center justify-center size-8 rounded-md border border-slate-700 bg-slate-800 text-slate-400 transition-colors hover:bg-slate-700 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+      >
+        <RotateCcw className="size-3.5" />
+      </button>
     </div>
   )
 }
