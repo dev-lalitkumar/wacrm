@@ -7,8 +7,6 @@ import {
   TrendingUp,
   Target,
   BarChart3,
-  Trophy,
-  XCircle,
   Info,
 } from "lucide-react";
 import {
@@ -34,21 +32,18 @@ function formatCurrency(value: number) {
 
 /**
  * Weighted pipeline value: value × per-stage probability.
- * First stage ≈ 10%, stages interpolate up to 90% before the final stage,
- * final stage (Won) = 100%. Lost deals excluded.
+ * Stages interpolate linearly from 10% (first stage) to 90% (last stage).
+ * e.g. New ≈ 10%, Qualified ≈ 37%, Proposal Sent ≈ 63%, Negotiation ≈ 90%.
  */
 function computeStageProbability(
   stage: PipelineStage,
   sortedStages: PipelineStage[],
 ): number {
   const n = sortedStages.length;
-  if (n <= 1) return 1;
+  if (n <= 1) return 0.5;
   const index = sortedStages.findIndex((s) => s.id === stage.id);
   if (index < 0) return 0;
-  if (index === n - 1) return 1;
-  const slots = n - 1;
-  if (slots <= 1) return 0.1;
-  const t = index / (slots - 1);
+  const t = index / (n - 1);
   return 0.1 + t * (0.9 - 0.1);
 }
 
@@ -59,11 +54,11 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
   );
 
   const stats = useMemo(() => {
-    const active = deals.filter((d) => d.status !== "lost");
-    const openDeals = active.filter((d) => d.status !== "won");
+    // All deals passed in are open (filtered by parent), but guard anyway
+    const openDeals = deals.filter((d) => d.status === "open" || !d.status);
 
-    const totalCount = active.length;
-    const totalValue = active.reduce((sum, d) => sum + Number(d.value || 0), 0);
+    const totalCount = openDeals.length;
+    const totalValue = openDeals.reduce((sum, d) => sum + Number(d.value || 0), 0);
     const avgValue = totalCount > 0 ? totalValue / totalCount : 0;
 
     const stageById = new Map(sortedStages.map((s) => [s.id, s]));
@@ -74,67 +69,35 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
       return sum + Number(d.value || 0) * prob;
     }, 0);
 
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const thisMonth = (d: Deal) => {
-      const ts = d.updated_at ?? d.created_at;
-      return ts ? new Date(ts) >= monthStart : false;
-    };
-    const wonThisMonth = deals.filter(
-      (d) => d.status === "won" && thisMonth(d),
-    ).length;
-    const lostThisMonth = deals.filter(
-      (d) => d.status === "lost" && thisMonth(d),
-    ).length;
-
-    return {
-      totalCount,
-      totalValue,
-      avgValue,
-      weightedValue,
-      wonThisMonth,
-      lostThisMonth,
-    };
+    return { totalCount, totalValue, avgValue, weightedValue };
   }, [deals, sortedStages]);
 
   return (
     <TooltipProvider>
-      <div className="grid grid-cols-2 gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4 sm:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4 sm:grid-cols-4">
         <Metric
           icon={<BarChart3 className="h-4 w-4 text-slate-400" />}
-          label="Total Deals"
+          label="Open Deals"
           value={String(stats.totalCount)}
-          tooltip="Count of every deal in this pipeline that isn't marked as Lost. Won deals are still included."
+          tooltip="Count of all open deals in the pipeline."
         />
         <Metric
           icon={<DollarSign className="h-4 w-4 text-primary" />}
           label="Pipeline Value"
           value={formatCurrency(stats.totalValue)}
-          tooltip="Sum of the dollar values of all deals in this pipeline, excluding deals marked as Lost."
+          tooltip="Sum of the dollar values of all open deals in the pipeline."
         />
         <Metric
           icon={<Target className="h-4 w-4 text-blue-400" />}
           label="Avg Deal Size"
           value={formatCurrency(stats.avgValue)}
-          tooltip="Pipeline Value divided by Total Deals — the average value of a single non-lost deal."
+          tooltip="Pipeline Value divided by Open Deals — the average value of a single deal."
         />
         <Metric
           icon={<TrendingUp className="h-4 w-4 text-purple-400" />}
           label="Weighted Value"
           value={formatCurrency(stats.weightedValue)}
-          tooltip="Expected revenue: each open deal's value × its stage probability. First stage ≈ 10%, stages progress up to 90%, Won = 100%. Lost deals are excluded."
-        />
-        <Metric
-          icon={<Trophy className="h-4 w-4 text-primary" />}
-          label="Won This Month"
-          value={String(stats.wonThisMonth)}
-          tooltip="Deals marked as Won since the first day of the current month."
-        />
-        <Metric
-          icon={<XCircle className="h-4 w-4 text-red-400" />}
-          label="Lost This Month"
-          value={String(stats.lostThisMonth)}
-          tooltip="Deals marked as Lost since the first day of the current month."
+          tooltip="Expected revenue: each deal's value × its stage probability. New ≈ 10%, Qualified ≈ 37%, Proposal Sent ≈ 63%, Negotiation ≈ 90%."
         />
       </div>
     </TooltipProvider>

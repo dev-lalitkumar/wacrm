@@ -163,6 +163,7 @@ export default function PipelinesPage() {
       .from("deals")
       .select("*, contact:contacts(*, contact_tags(tag:tags(*))), assignee:profiles!deals_assigned_to_fkey(*)")
       .eq("pipeline_id", FIXED_PIPELINE_ID)
+      .eq("status", "open")
       .order("created_at", { ascending: false });
     return (data ?? []) as Deal[];
   }, [supabase]);
@@ -312,7 +313,7 @@ export default function PipelinesPage() {
           <div className="h-9 w-28 animate-pulse rounded-lg bg-slate-800" />
         </div>
         <div className="flex gap-3">
-          {[1, 2, 3, 4, 5].map((i) => (
+          {[1, 2, 3, 4].map((i) => (
             <div key={i} className="h-96 w-72 animate-pulse rounded-xl bg-slate-800/50" />
           ))}
         </div>

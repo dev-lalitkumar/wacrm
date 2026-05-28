@@ -14,6 +14,7 @@ import {
   MessageSquareMore,
   Users,
   Briefcase,
+  Archive,
   BarChart2,
   Radio,
   Zap,
@@ -52,6 +53,7 @@ interface NavItem {
 const mainNavItems: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/pipelines', label: 'Deals', icon: Briefcase },
+  { href: '/closed-deals', label: 'Closed Deals', icon: Archive },
   { href: '/contacts', label: 'Contacts', icon: Users },
 ];
 
