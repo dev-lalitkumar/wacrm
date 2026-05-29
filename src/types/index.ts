@@ -101,6 +101,10 @@ export interface DealFollowup {
   created_by: string;
   created_at: string;
   creator?: Profile;
+  // Call Center metadata (migration 026)
+  call_log_id?: string | null;
+  recording_url?: string | null;
+  call_duration?: number | null;
 }
 
 export interface ContactFollowup {
@@ -111,6 +115,10 @@ export interface ContactFollowup {
   created_by: string;
   created_at: string;
   creator?: Profile;
+  // Call Center metadata (migration 026)
+  call_log_id?: string | null;
+  recording_url?: string | null;
+  call_duration?: number | null;
 }
 
 export interface ContactNote {

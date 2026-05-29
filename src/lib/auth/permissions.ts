@@ -144,6 +144,12 @@ export function canManageMetaConfig(role: Role | string | null | undefined) {
   return role === 'admin' || role === 'owner'
 }
 
+// ── Call Center / Telephony (migration 026) ────────────────────
+/** Admin + Owner can configure telephony providers */
+export function canManageCallCenter(role: Role | string | null | undefined) {
+  return role === 'admin' || role === 'owner'
+}
+
 // ── Assignee filter (deals + contacts) ─────────────────────────
 /** Admin/Owner/Manager can filter by assignee. Executives are RLS-scoped to own data. */
 export function canFilterAssignees(role: Role | string | null | undefined) {

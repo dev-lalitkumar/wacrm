@@ -42,6 +42,7 @@ export function ProfileForm() {
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [pendingAvatar, setPendingAvatar] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [removeAvatar, setRemoveAvatar] = useState(false);
@@ -53,6 +54,7 @@ export function ProfileForm() {
     if (!profile) return;
     setFullName(profile.full_name ?? '');
     setEmail(profile.email ?? '');
+    setPhone((profile as { phone?: string }).phone ?? '');
   }, [profile]);
 
   // Cleanup object URLs to avoid leaks.
@@ -142,12 +144,13 @@ export function ProfileForm() {
         nextAvatarUrl = null;
       }
 
-      // Persist name + avatar to profiles.
+      // Persist name + avatar + phone to profiles.
       const { error: updateError } = await supabase
         .from('profiles')
         .update({
           full_name: trimmedName,
           avatar_url: nextAvatarUrl,
+          phone: phone.trim() || null,
         })
         .eq('user_id', user.id);
       if (updateError) {
@@ -198,6 +201,7 @@ export function ProfileForm() {
     !!profile &&
     (fullName.trim() !== (profile.full_name ?? '') ||
       email.trim().toLowerCase() !== (profile.email ?? '').toLowerCase() ||
+      phone.trim() !== ((profile as { phone?: string }).phone ?? '') ||
       pendingAvatar !== null ||
       removeAvatar);
 
@@ -306,6 +310,25 @@ export function ProfileForm() {
                 </span>
               </p>
             )}
+          </div>
+
+          {/* Phone */}
+          <div className="space-y-2">
+            <Label htmlFor="profile-phone" className="text-slate-200">
+              Phone Number
+            </Label>
+            <Input
+              id="profile-phone"
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="e.g. 9876543210"
+              maxLength={20}
+              disabled={saving}
+            />
+            <p className="text-xs text-slate-500">
+              Used for click-to-call. Must be registered with your telephony provider.
+            </p>
           </div>
 
           {/* Read-only block */}

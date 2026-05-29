@@ -14,6 +14,7 @@ import {
   Building2,
   Mail,
   Share2,
+  Phone,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
@@ -31,6 +32,7 @@ import { IntegrationsManager } from '@/components/settings/integrations-manager'
 import { CompanyForm } from '@/components/settings/company-form';
 import { GmailConfig } from '@/components/settings/gmail-config';
 import { MetaConfig } from '@/components/settings/meta-config';
+import { CallCenterConfig } from '@/components/settings/call-center-config';
 import { useAuth } from '@/hooks/use-auth';
 import {
   canManageTeam,
@@ -39,6 +41,7 @@ import {
   canManageCompany,
   canManageEmailConfig,
   canManageMetaConfig,
+  canManageCallCenter,
 } from '@/lib/auth/permissions';
 
 const TAB_VALUES = [
@@ -52,6 +55,7 @@ const TAB_VALUES = [
   'whatsapp',
   'email',
   'meta',
+  'call-center',
   'templates',
   'tags',
   'appearance',
@@ -88,6 +92,7 @@ export default function SettingsPage() {
   const showIntegrations = profileLoading || canViewWebhooks(role);
   const showEmail = profileLoading || canManageEmailConfig(role);
   const showMeta = profileLoading || canManageMetaConfig(role);
+  const showCallCenter = profileLoading || canManageCallCenter(role);
 
   // The URL is the single source of truth for the active tab — no
   // local state, no sync effect. A previous revision duplicated this
@@ -113,6 +118,9 @@ export default function SettingsPage() {
     tab = 'profile';
   }
   if (tab === 'meta' && !showMeta) {
+    tab = 'profile';
+  }
+  if (tab === 'call-center' && !showCallCenter) {
     tab = 'profile';
   }
 
@@ -206,6 +214,12 @@ export default function SettingsPage() {
               Meta / Facebook
             </TabsTrigger>
           )}
+          {showCallCenter && (
+            <TabsTrigger value="call-center" className={triggerCls}>
+              <Phone className="size-4 shrink-0" />
+              Call Center
+            </TabsTrigger>
+          )}
           {showIntegrations && (
             <TabsTrigger value="integrations" className={triggerCls}>
               <WebhookIcon className="size-4 shrink-0" />
@@ -273,6 +287,12 @@ export default function SettingsPage() {
           {showMeta && (
             <TabsContent value="meta" className="space-y-6">
               <MetaConfig />
+            </TabsContent>
+          )}
+
+          {showCallCenter && (
+            <TabsContent value="call-center" className="space-y-6">
+              <CallCenterConfig />
             </TabsContent>
           )}
 

@@ -2,11 +2,13 @@
 
 import type { Contact, Tag, CustomField, Profile } from "@/types";
 import { Phone, Mail, Building2, User, Tag as TagIcon } from "lucide-react";
+import { ClickToCallButton } from "@/components/telephony/click-to-call-button";
 
 interface ContactInfoCardProps {
   contact: Contact & { tags?: Tag[] };
   customFields: CustomField[];
   assignee?: Profile | null;
+  dealId?: string | null;
 }
 
 function renderCustomValue(field: CustomField, raw: unknown): React.ReactNode {
@@ -31,7 +33,7 @@ function renderCustomValue(field: CustomField, raw: unknown): React.ReactNode {
   return <span className="text-slate-200">{String(raw)}</span>;
 }
 
-export function ContactInfoCard({ contact, customFields, assignee }: ContactInfoCardProps) {
+export function ContactInfoCard({ contact, customFields, assignee, dealId }: ContactInfoCardProps) {
   const tags = contact.tags ?? [];
 
   return (
@@ -42,7 +44,16 @@ export function ContactInfoCard({ contact, customFields, assignee }: ContactInfo
           <p className="flex items-center gap-1 text-[11px] text-slate-500 mb-0.5">
             <Phone className="size-2.5" /> Phone
           </p>
-          <p className="text-xs text-slate-200">{contact.phone || "—"}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-xs text-slate-200">{contact.phone || "—"}</p>
+            {contact.phone && (
+              <ClickToCallButton
+                contactId={contact.id}
+                dealId={dealId}
+                phoneNumber={contact.phone}
+              />
+            )}
+          </div>
         </div>
         <div>
           <p className="flex items-center gap-1 text-[11px] text-slate-500 mb-0.5">

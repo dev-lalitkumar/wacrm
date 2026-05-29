@@ -20,6 +20,8 @@ interface FollowupEntry {
   channel?: string;
   type: "followup" | "note";
   creator?: { full_name?: string; email?: string };
+  recording_url?: string | null;
+  call_duration?: number | null;
 }
 
 interface ActivityHistoryProps {
@@ -28,6 +30,13 @@ interface ActivityHistoryProps {
 }
 
 const PAGE_SIZE = 20;
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return s > 0 ? `${m}m ${s}s` : `${m}m`
+}
 
 export function ActivityHistory({ entityType, entityId }: ActivityHistoryProps) {
   const supabase = createClient();
@@ -48,7 +57,7 @@ export function ActivityHistory({ entityType, entityId }: ActivityHistoryProps) 
       (async (): Promise<FollowupEntry[]> => {
         const { data } = await supabase
           .from(table)
-          .select("id, created_at, note, channel, creator:profiles(full_name, email)")
+          .select("id, created_at, note, channel, recording_url, call_duration, creator:profiles(full_name, email)")
           .eq(col, entityId)
           .order("created_at", { ascending: false })
           .range(from, to);
@@ -59,6 +68,8 @@ export function ActivityHistory({ entityType, entityId }: ActivityHistoryProps) 
           channel: r.channel,
           type: "followup" as const,
           creator: r.creator as { full_name?: string; email?: string } | undefined,
+          recording_url: r.recording_url ?? null,
+          call_duration: r.call_duration ?? null,
         }));
       })(),
     ];
@@ -155,6 +166,21 @@ export function ActivityHistory({ entityType, entityId }: ActivityHistoryProps) 
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">{entry.note}</p>
+              {entry.channel === "call" && entry.call_duration != null && (
+                <span className="inline-block mt-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] text-blue-400">
+                  {formatDuration(entry.call_duration)}
+                </span>
+              )}
+              {entry.channel === "call" && entry.recording_url && (
+                <audio
+                  controls
+                  preload="none"
+                  className="mt-2 h-8 w-full max-w-xs rounded accent-primary"
+                >
+                  <source src={entry.recording_url} />
+                  Recording not supported in this browser.
+                </audio>
+              )}
               <p className="text-[10px] text-slate-500 mt-1">
                 {creatorName} · {timeAgo(entry.created_at)}
               </p>
