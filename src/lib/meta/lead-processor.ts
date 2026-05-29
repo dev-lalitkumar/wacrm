@@ -3,7 +3,7 @@ import type { FieldData, FieldMapping } from './types'
 import { createContact, type CreateContactInput } from '@/lib/contacts/service'
 import { createDeal } from '@/lib/deals/service'
 import { FIXED_PIPELINE_ID } from '@/lib/pipeline/constants'
-import { normalizePhone } from '@/lib/whatsapp/phone-utils'
+import { normalizePhone, phonesMatch } from '@/lib/whatsapp/phone-utils'
 
 export interface ProcessLeadInput {
   leadgenId: string
@@ -18,6 +18,8 @@ export interface ProcessLeadResult {
   dealId: string | null
   status: 'success' | 'error' | 'skipped'
   errorMessage?: string
+  /** true when an existing contact was enriched instead of a new one created */
+  deduplicated?: boolean
 }
 
 const CONTACT_FIELDS = new Set(['name', 'email', 'phone', 'company'])
@@ -29,7 +31,7 @@ export async function processLeadEvent(
 ): Promise<ProcessLeadResult> {
   const { formId, fieldData, sourceId } = input
 
-  // Load field mappings for this form
+  // ── 1. Load field mappings ──────────────────────────────────────
   const { data: mappingRows, error: mapErr } = await supabase
     .from('facebook_field_mappings')
     .select('*')
@@ -40,14 +42,10 @@ export async function processLeadEvent(
   }
 
   const mappings = (mappingRows ?? []) as FieldMapping[]
-
-  // Build a lookup: fb_field_key → mapping
   const mappingMap = new Map<string, FieldMapping>()
-  for (const m of mappings) {
-    mappingMap.set(m.fb_field_key, m)
-  }
+  for (const m of mappings) mappingMap.set(m.fb_field_key, m)
 
-  // Map fieldData to contact/deal fields
+  // ── 2. Map fieldData → contact / deal fields ────────────────────
   const contactFields: Partial<CreateContactInput> & { custom_data?: Record<string, unknown> } = {}
   const dealCustomData: Record<string, unknown> = {}
   const dealStandardFields: Record<string, unknown> = {}
@@ -77,45 +75,98 @@ export async function processLeadEvent(
     }
   }
 
-  // Require at least phone or email to create a contact
   const phone = (contactFields.phone as string | undefined)?.trim()
   const email = (contactFields.email as string | undefined)?.trim()
+  const name = (contactFields.name as string | undefined)?.trim() ?? null
+  const company = (contactFields.company as string | undefined)?.trim() ?? null
 
   if (!phone && !email) {
     return {
       contactId: null,
       dealId: null,
       status: 'skipped',
-      errorMessage: 'No phone or email in lead data; no mapping configured for these fields',
+      errorMessage: 'No phone or email in lead data; map at least one of these fields',
     }
   }
 
-  // Create contact via the central service
+  // ── 3. Deduplication — phone fuzzy match then email exact match ──
+  // Mirrors the logic in /api/integrations/webhook/[webhookId]/route.ts
+  const normalizedPhone = phone ? normalizePhone(phone) : null
+  const normalizedEmail = email ? email.toLowerCase() : null
+
+  const { data: allContacts } = await supabase
+    .from('contacts')
+    .select('id, phone, email, name, company, assigned_to, custom_data')
+
+  type ContactRow = {
+    id: string
+    phone: string | null
+    email: string | null
+    name: string | null
+    company: string | null
+    assigned_to: string | null
+    custom_data: Record<string, unknown> | null
+  }
+
+  const contacts = (allContacts ?? []) as ContactRow[]
+
+  const existing: ContactRow | null =
+    (normalizedPhone
+      ? contacts.find((c) => c.phone ? phonesMatch(c.phone, normalizedPhone) : false)
+      : null) ??
+    (normalizedEmail
+      ? contacts.find((c) => c.email && c.email.toLowerCase() === normalizedEmail)
+      : null) ??
+    null
+
   let contactId: string
-  try {
-    const result = await createContact(supabase, {
-      phone: phone ?? email ?? '',
-      name: (contactFields.name as string | undefined) ?? null,
-      email: email ?? null,
-      company: (contactFields.company as string | undefined) ?? null,
-      source_id: sourceId,
-      custom_data: contactFields.custom_data ?? {},
-      user_id: null,
-    })
-    contactId = result.id
-  } catch (err) {
-    return {
-      contactId: null,
-      dealId: null,
-      status: 'error',
-      errorMessage: err instanceof Error ? err.message : 'Contact creation failed',
+  let deduplicated = false
+
+  if (existing) {
+    // Enrich existing contact — fill blanks only, never overwrite
+    deduplicated = true
+    const patch: Record<string, unknown> = {}
+    if (!existing.name && name) patch.name = name
+    if (!existing.phone && normalizedPhone) patch.phone = normalizedPhone
+    if (!existing.email && normalizedEmail) patch.email = normalizedEmail
+    if (!existing.company && company) patch.company = company
+    if (contactFields.custom_data && Object.keys(contactFields.custom_data).length > 0) {
+      patch.custom_data = {
+        ...(existing.custom_data ?? {}),
+        ...contactFields.custom_data,
+      }
+    }
+    if (Object.keys(patch).length > 0) {
+      patch.updated_at = new Date().toISOString()
+      await supabase.from('contacts').update(patch).eq('id', existing.id)
+    }
+    contactId = existing.id
+  } else {
+    // Create new contact via the central service
+    try {
+      const result = await createContact(supabase, {
+        phone: normalizedPhone ?? email ?? '',
+        name,
+        email: normalizedEmail ?? null,
+        company,
+        source_id: sourceId,
+        custom_data: contactFields.custom_data ?? {},
+        user_id: null,
+      })
+      contactId = result.id
+    } catch (err) {
+      return {
+        contactId: null,
+        dealId: null,
+        status: 'error',
+        errorMessage: err instanceof Error ? err.message : 'Contact creation failed',
+      }
     }
   }
 
-  // Optionally create a deal if any deal fields were mapped
+  // ── 4. Optionally create a deal ──────────────────────────────────
   let dealId: string | null = null
   if (hasDealMapping) {
-    // Fetch the first stage of the fixed pipeline
     const { data: stageRow } = await supabase
       .from('pipeline_stages')
       .select('id')
@@ -136,17 +187,16 @@ export async function processLeadEvent(
           value: dealStandardFields.value ? Number(dealStandardFields.value) : 0,
           custom_data: dealCustomData,
           user_id: null,
-          _contactName: (contactFields.name as string | undefined) ?? null,
-          _contactPhone: phone ? normalizePhone(phone) : null,
+          _contactName: name,
+          _contactPhone: normalizedPhone,
           _fallbackTitle: 'Facebook Lead',
         })
         dealId = dealResult.id
       } catch (err) {
         console.error('[meta/lead-processor] deal creation failed:', err)
-        // Contact succeeded — return partial success
       }
     }
   }
 
-  return { contactId, dealId, status: 'success' }
+  return { contactId, dealId, status: 'success', deduplicated }
 }

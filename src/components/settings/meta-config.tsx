@@ -8,6 +8,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { FacebookAccountSection } from './meta/facebook-account-section'
 import { FacebookPagesSection } from './meta/facebook-pages-section'
 import { WhatsAppCoexistenceSection } from './meta/whatsapp-coexistence-section'
+import { WebhookLogsSection } from './meta/webhook-logs-section'
+import { DeletionRequestsSection } from './meta/deletion-requests-section'
 import type { FacebookConfigResponse, FacebookPage } from '@/lib/meta/types'
 
 export function MetaConfig() {
@@ -167,6 +169,10 @@ export function MetaConfig() {
       )}
 
       <WhatsAppCoexistenceSection />
+
+      <WebhookLogsSection />
+
+      <DeletionRequestsSection />
     </div>
   )
 }

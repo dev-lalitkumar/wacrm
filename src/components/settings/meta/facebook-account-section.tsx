@@ -27,13 +27,25 @@ interface Props {
 
 function TokenExpiryBadge({ expiresAt }: { expiresAt: number | null }) {
   if (!expiresAt) return null
-  const daysLeft = Math.floor((expiresAt - Date.now() / 1000) / 86400)
-  if (daysLeft > 7) return null
-  return (
-    <Badge variant="destructive" className="ml-2 text-xs">
-      Token expires in {daysLeft} day{daysLeft !== 1 ? 's' : ''} — reconnect soon
-    </Badge>
-  )
+  const nowSec = Date.now() / 1000
+  const daysLeft = Math.floor((expiresAt - nowSec) / 86400)
+  const isExpired = expiresAt < nowSec
+
+  if (isExpired) {
+    return (
+      <Badge variant="destructive" className="ml-2 text-xs">
+        Token expired — lead capture still active, reconnect to sync new pages
+      </Badge>
+    )
+  }
+  if (daysLeft <= 7) {
+    return (
+      <Badge variant="destructive" className="ml-2 text-xs">
+        Token expires in {daysLeft} day{daysLeft !== 1 ? 's' : ''} — reconnect soon to keep page sync working
+      </Badge>
+    )
+  }
+  return null
 }
 
 export function FacebookAccountSection({
@@ -79,14 +91,21 @@ export function FacebookAccountSection({
               Connected
               <TokenExpiryBadge expiresAt={config.token_expires_at} />
             </AlertTitle>
-            <AlertDescription className="text-slate-300">
-              Signed in as{' '}
-              <span className="font-semibold text-white">{config.fb_user_name}</span>
-              {config.fb_user_email && (
-                <span className="text-slate-400"> ({config.fb_user_email})</span>
-              )}
-              {' · '}
-              <span className="text-slate-400">{config.page_count} page{config.page_count !== 1 ? 's' : ''} available</span>
+            <AlertDescription className="space-y-1.5 text-slate-300">
+              <div>
+                Signed in as{' '}
+                <span className="font-semibold text-white">{config.fb_user_name}</span>
+                {config.fb_user_email && (
+                  <span className="text-slate-400"> ({config.fb_user_email})</span>
+                )}
+                {' · '}
+                <span className="text-slate-400">{config.page_count} page{config.page_count !== 1 ? 's' : ''} available</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="inline-flex size-2 rounded-full bg-green-400" />
+                <span className="text-green-400 font-medium">Lead capture active</span>
+                <span className="text-slate-500">— page tokens never expire; leads will continue to arrive even if you need to reconnect</span>
+              </div>
             </AlertDescription>
           </Alert>
         )}
