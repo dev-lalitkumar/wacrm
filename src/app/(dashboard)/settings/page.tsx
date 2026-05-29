@@ -13,6 +13,7 @@ import {
   XCircle,
   Building2,
   Mail,
+  Share2,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
@@ -29,6 +30,7 @@ import { SourcesManager } from '@/components/settings/sources-manager';
 import { IntegrationsManager } from '@/components/settings/integrations-manager';
 import { CompanyForm } from '@/components/settings/company-form';
 import { GmailConfig } from '@/components/settings/gmail-config';
+import { MetaConfig } from '@/components/settings/meta-config';
 import { useAuth } from '@/hooks/use-auth';
 import {
   canManageTeam,
@@ -48,6 +50,7 @@ const TAB_VALUES = [
   'integrations',
   'whatsapp',
   'email',
+  'meta',
   'templates',
   'tags',
   'appearance',
@@ -78,6 +81,7 @@ export default function SettingsPage() {
   // Integrations tab is admin/owner/manager only.
   const showIntegrations = canViewWebhooks(profile?.role ?? null);
   const showEmail = canManageEmailConfig(profile?.role ?? null);
+  const showMeta = canManageEmailConfig(profile?.role ?? null);
 
   // The URL is the single source of truth for the active tab — no
   // local state, no sync effect. A previous revision duplicated this
@@ -100,6 +104,9 @@ export default function SettingsPage() {
     tab = 'profile';
   }
   if (tab === 'email' && !showEmail) {
+    tab = 'profile';
+  }
+  if (tab === 'meta' && !showMeta) {
     tab = 'profile';
   }
 
@@ -187,6 +194,12 @@ export default function SettingsPage() {
               Email
             </TabsTrigger>
           )}
+          {showMeta && (
+            <TabsTrigger value="meta" className={triggerCls}>
+              <Share2 className="size-4 shrink-0" />
+              Meta / Facebook
+            </TabsTrigger>
+          )}
           {showIntegrations && (
             <TabsTrigger value="integrations" className={triggerCls}>
               <WebhookIcon className="size-4 shrink-0" />
@@ -248,6 +261,12 @@ export default function SettingsPage() {
           {showEmail && (
             <TabsContent value="email" className="space-y-6">
               <GmailConfig />
+            </TabsContent>
+          )}
+
+          {showMeta && (
+            <TabsContent value="meta" className="space-y-6">
+              <MetaConfig />
             </TabsContent>
           )}
 
