@@ -83,11 +83,11 @@ export default function ClosedDealsPage() {
       supabase
         .from("deals")
         .select(
-          "*, contact:contacts(*, contact_tags(tag:tags(*))), assignee:profiles!deals_assigned_to_fkey(*), stage:pipeline_stages(*), lost_reason:lost_reasons(id, reason)"
+          "*, contact:contacts(*, contact_tags(tag:tags(*))), assignee:profiles!deals_assigned_to_fkey(*), closer:profiles!deals_closed_by_fkey(id, full_name, email), stage:pipeline_stages(*), lost_reason:lost_reasons(id, reason)"
         )
         .eq("pipeline_id", FIXED_PIPELINE_ID)
         .in("status", ["won", "lost"])
-        .order("updated_at", { ascending: false }),
+        .order("closed_at", { ascending: false }),
       supabase
         .from("pipeline_stages")
         .select("*")
@@ -189,8 +189,8 @@ export default function ClosedDealsPage() {
         av = Number(a.value ?? 0);
         bv = Number(b.value ?? 0);
       } else if (sortKey === "closed") {
-        av = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-        bv = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+        av = a.closed_at ? new Date(a.closed_at).getTime() : 0;
+        bv = b.closed_at ? new Date(b.closed_at).getTime() : 0;
       } else {
         av = a.created_at ? new Date(a.created_at).getTime() : 0;
         bv = b.created_at ? new Date(b.created_at).getTime() : 0;
@@ -562,6 +562,7 @@ export default function ClosedDealsPage() {
                   {showAssigneeFilter && (
                     <th className="px-4 py-3 text-left">Assignee</th>
                   )}
+                  <th className="px-4 py-3 text-left">Closed By</th>
                   <th className="px-4 py-3 text-right">
                     <SortHeader label="Closed" k="closed" />
                   </th>
@@ -690,9 +691,20 @@ export default function ClosedDealsPage() {
                         </td>
                       )}
 
+                      {/* Closed By */}
+                      <td className="px-4 py-3">
+                        {deal.closer ? (
+                          <span className="text-xs text-slate-300">
+                            {(deal.closer as Profile).full_name || (deal.closer as Profile).email}
+                          </span>
+                        ) : (
+                          <span className="text-slate-600 text-xs">—</span>
+                        )}
+                      </td>
+
                       {/* Closed date */}
                       <td className="px-4 py-3 text-right text-[11px] text-slate-500 whitespace-nowrap">
-                        {fmtDate(deal.updated_at)}
+                        {fmtDate(deal.closed_at)}
                       </td>
 
                       {/* Created date */}

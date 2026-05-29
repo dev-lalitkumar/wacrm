@@ -1,0 +1,13 @@
+name: Hit URL on Push
+
+on:
+  push:
+    branches:
+      - production
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send HTTP Request
+        run: curl -s https://api.vercel.com/v1/integrations/deploy/prj_OrSYH1xslCP877bRt2ypzEEWngOl/CAz7zRsHyz

@@ -1,9 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { daysAgoStart, startOfLocalDay } from '../dashboard/date-utils'
+import { daysAgoStart } from '../dashboard/date-utils'
 import type {
-  CrmMetricsBundle,
+  DashboardMetrics,
   LeaderboardRow,
   RecentFollowup,
+  ReminderCountsBundle,
   UpcomingReminder,
   WonLostWeek,
 } from './types'
@@ -13,70 +14,123 @@ import type {
 
 type DB = SupabaseClient
 
-// --- 1. CRM Metric cards ------------------------------------------------
+// --- 1. Dashboard Metric cards -------------------------------------------
 
-export async function loadCrmMetrics(db: DB): Promise<CrmMetricsBundle> {
-  const weekAgo = daysAgoStart(7).toISOString()
-  const monthStart = (() => {
-    const d = new Date()
-    d.setDate(1)
-    d.setHours(0, 0, 0, 0)
-    return d.toISOString()
-  })()
-  const nowIso = new Date().toISOString()
+export async function loadDashboardMetrics(
+  db: DB,
+  rangeStart: string,
+  rangeEnd: string,
+  profileIds?: string[],
+): Promise<DashboardMetrics> {
+  // Build queries in parallel
+  let newDealsQ = db
+    .from('deals')
+    .select('value')
+    .gte('created_at', rangeStart)
+    .lte('created_at', rangeEnd)
+  let openDealsQ = db.from('deals').select('value').eq('status', 'open')
+  let wonDealsQ = db
+    .from('deals')
+    .select('value')
+    .eq('status', 'won')
+    .gte('closed_at', rangeStart)
+    .lte('closed_at', rangeEnd)
+  let lostDealsQ = db
+    .from('deals')
+    .select('value')
+    .eq('status', 'lost')
+    .gte('closed_at', rangeStart)
+    .lte('closed_at', rangeEnd)
 
-  const [
-    totalContactsRes,
-    newContactsWeekRes,
-    openDealsRes,
-    wonThisMonthRes,
-    overdueRes,
-  ] = await Promise.all([
-    db.from('contacts').select('id', { count: 'exact', head: true }),
-    db
-      .from('contacts')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', weekAgo),
-    db.from('deals').select('value').eq('status', 'open'),
-    db
-      .from('deals')
-      .select('value')
-      .eq('status', 'won')
-      .gte('updated_at', monthStart),
-    db
-      .from('deals')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'open')
-      .not('reminder_at', 'is', null)
-      .lt('reminder_at', nowIso),
+  if (profileIds && profileIds.length > 0) {
+    newDealsQ = newDealsQ.in('assigned_to', profileIds)
+    openDealsQ = openDealsQ.in('assigned_to', profileIds)
+    wonDealsQ = wonDealsQ.in('assigned_to', profileIds)
+    lostDealsQ = lostDealsQ.in('assigned_to', profileIds)
+  }
+
+  const [newRes, openRes, wonRes, lostRes] = await Promise.all([
+    newDealsQ,
+    openDealsQ,
+    wonDealsQ,
+    lostDealsQ,
   ])
 
-  const openRows = (openDealsRes.data ?? []) as { value: number | null }[]
-  const wonRows = (wonThisMonthRes.data ?? []) as { value: number | null }[]
+  const newRows = (newRes.data ?? []) as { value: number | null }[]
+  const openRows = (openRes.data ?? []) as { value: number | null }[]
+  const wonRows = (wonRes.data ?? []) as { value: number | null }[]
+  const lostRows = (lostRes.data ?? []) as { value: number | null }[]
 
   return {
-    totalContacts: totalContactsRes.count ?? 0,
-    newContactsThisWeek: newContactsWeekRes.count ?? 0,
-    openDealsValue: openRows.reduce((s, d) => s + (d.value ?? 0), 0),
+    newDeals: newRows.length,
+    newDealsValue: newRows.reduce((s, d) => s + (d.value ?? 0), 0),
     openDealsCount: openRows.length,
-    wonThisMonthValue: wonRows.reduce((s, d) => s + (d.value ?? 0), 0),
-    wonThisMonthCount: wonRows.length,
-    overdueReminders: overdueRes.count ?? 0,
+    openDealsValue: openRows.reduce((s, d) => s + (d.value ?? 0), 0),
+    wonDeals: wonRows.length,
+    wonDealsValue: wonRows.reduce((s, d) => s + (d.value ?? 0), 0),
+    lostDeals: lostRows.length,
+    lostDealsValue: lostRows.reduce((s, d) => s + (d.value ?? 0), 0),
   }
 }
 
-// --- 2. Won vs Lost trend (8 weeks) -------------------------------------
+// --- 2. Reminder counts --------------------------------------------------
 
-export async function loadWonLostTrend(db: DB): Promise<WonLostWeek[]> {
+export async function loadReminderCounts(
+  db: DB,
+  profileIds?: string[],
+): Promise<ReminderCountsBundle> {
+  let q = db
+    .from('deals')
+    .select('reminder_at')
+    .eq('status', 'open')
+    .not('reminder_at', 'is', null)
+
+  if (profileIds && profileIds.length > 0) {
+    q = q.in('assigned_to', profileIds)
+  }
+
+  const { data } = await q
+  const rows = (data ?? []) as { reminder_at: string }[]
+
+  const now = new Date()
+  const todayEnd = new Date()
+  todayEnd.setHours(23, 59, 59, 999)
+
+  let today = 0
+  let missed = 0
+  let upcoming = 0
+
+  for (const r of rows) {
+    const dt = new Date(r.reminder_at)
+    if (dt < now) missed++
+    else if (dt <= todayEnd) today++
+    else upcoming++
+  }
+
+  return { today, missed, upcoming }
+}
+
+// --- 3. Won vs Lost trend (8 weeks) -------------------------------------
+
+export async function loadWonLostTrend(
+  db: DB,
+  profileIds?: string[],
+): Promise<WonLostWeek[]> {
   const eightWeeksAgo = daysAgoStart(56).toISOString()
 
-  const { data } = await db
+  let q = db
     .from('deals')
-    .select('status, updated_at')
+    .select('status, closed_at')
     .in('status', ['won', 'lost'])
-    .gte('updated_at', eightWeeksAgo)
+    .not('closed_at', 'is', null)
+    .gte('closed_at', eightWeeksAgo)
 
-  const rows = (data ?? []) as { status: string; updated_at: string }[]
+  if (profileIds && profileIds.length > 0) {
+    q = q.in('assigned_to', profileIds)
+  }
+
+  const { data } = await q
+  const rows = (data ?? []) as { status: string; closed_at: string }[]
 
   // Group by week (Monday-start)
   const weekBuckets = new Map<string, { won: number; lost: number }>()
@@ -84,7 +138,6 @@ export async function loadWonLostTrend(db: DB): Promise<WonLostWeek[]> {
   // Seed the last 8 weeks so empty weeks still render
   for (let i = 7; i >= 0; i--) {
     const d = daysAgoStart(i * 7)
-    // Snap to Monday
     const dow = d.getDay()
     const diff = dow === 0 ? 6 : dow - 1
     d.setDate(d.getDate() - diff)
@@ -95,7 +148,7 @@ export async function loadWonLostTrend(db: DB): Promise<WonLostWeek[]> {
   }
 
   for (const r of rows) {
-    const d = new Date(r.updated_at)
+    const d = new Date(r.closed_at)
     const dow = d.getDay()
     const diff = dow === 0 ? 6 : dow - 1
     d.setDate(d.getDate() - diff)
@@ -106,7 +159,6 @@ export async function loadWonLostTrend(db: DB): Promise<WonLostWeek[]> {
     weekBuckets.set(key, bucket)
   }
 
-  // Sort chronologically and return
   return Array.from(weekBuckets.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, counts]) => ({
@@ -127,15 +179,16 @@ function weekLabel(key: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-// --- 3. Upcoming reminders -----------------------------------------------
+// --- 4. Upcoming reminders -----------------------------------------------
 
 export async function loadUpcomingReminders(
   db: DB,
   limit = 8,
+  profileIds?: string[],
 ): Promise<UpcomingReminder[]> {
   const nowIso = new Date().toISOString()
 
-  const { data } = await db
+  let q = db
     .from('deals')
     .select(
       'id, title, reminder_at, contact:contacts(name), stage:pipeline_stages(name, color)',
@@ -145,6 +198,12 @@ export async function loadUpcomingReminders(
     .gte('reminder_at', nowIso)
     .order('reminder_at', { ascending: true })
     .limit(limit)
+
+  if (profileIds && profileIds.length > 0) {
+    q = q.in('assigned_to', profileIds)
+  }
+
+  const { data } = await q
 
   return ((data ?? []) as unknown as Array<{
     id: string
@@ -166,19 +225,26 @@ export async function loadUpcomingReminders(
   })
 }
 
-// --- 4. Recent followups -------------------------------------------------
+// --- 5. Recent followups -------------------------------------------------
 
 export async function loadRecentFollowups(
   db: DB,
   limit = 8,
+  profileIds?: string[],
 ): Promise<RecentFollowup[]> {
-  const { data } = await db
+  let q = db
     .from('deal_followups')
     .select(
       'id, channel, created_at, deal:deals(title, contact:contacts(name)), creator:profiles(full_name)',
     )
     .order('created_at', { ascending: false })
     .limit(limit)
+
+  if (profileIds && profileIds.length > 0) {
+    q = q.in('created_by', profileIds)
+  }
+
+  const { data } = await q
 
   return ((data ?? []) as unknown as Array<{
     id: string
@@ -201,7 +267,7 @@ export async function loadRecentFollowups(
   })
 }
 
-// --- 5. Team leaderboard (admin / manager only) --------------------------
+// --- 6. Team leaderboard (admin / manager only) --------------------------
 
 export async function loadTeamLeaderboard(
   db: DB,
@@ -217,7 +283,6 @@ export async function loadTeamLeaderboard(
   })()
   const weekAgo = daysAgoStart(7).toISOString()
 
-  // Fetch all relevant data in parallel
   const [profilesRes, openDealsRes, wonDealsRes, followupsRes] =
     await Promise.all([
       db
@@ -233,7 +298,8 @@ export async function loadTeamLeaderboard(
         .from('deals')
         .select('assigned_to, value')
         .eq('status', 'won')
-        .gte('updated_at', monthStart)
+        .not('closed_at', 'is', null)
+        .gte('closed_at', monthStart)
         .in('assigned_to', visibleProfileIds),
       db
         .from('deal_followups')
@@ -249,7 +315,6 @@ export async function loadTeamLeaderboard(
     avatar_url: string | null
   }>
 
-  // Aggregate counts
   const openByProfile = new Map<string, number>()
   for (const d of (openDealsRes.data ?? []) as Array<{ assigned_to: string | null }>) {
     if (d.assigned_to) openByProfile.set(d.assigned_to, (openByProfile.get(d.assigned_to) ?? 0) + 1)

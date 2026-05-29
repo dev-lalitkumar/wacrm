@@ -130,10 +130,18 @@ export async function loadConversationsSeries(
 
 // --- 3. Pipeline donut -------------------------------------------------
 
-export async function loadPipelineDonut(db: DB): Promise<PipelineDonutData> {
+export async function loadPipelineDonut(
+  db: DB,
+  profileIds?: string[],
+): Promise<PipelineDonutData> {
+  let dealsQ = db.from('deals').select('stage_id, value, status').eq('status', 'open')
+  if (profileIds && profileIds.length > 0) {
+    dealsQ = dealsQ.in('assigned_to', profileIds)
+  }
+
   const [stagesRes, dealsRes] = await Promise.all([
     db.from('pipeline_stages').select('id, name, color, pipeline_id, position').order('position'),
-    db.from('deals').select('stage_id, value, status').eq('status', 'open'),
+    dealsQ,
   ])
 
   const stages =
@@ -148,18 +156,14 @@ export async function loadPipelineDonut(db: DB): Promise<PipelineDonutData> {
     byStage.set(d.stage_id, row)
   }
 
-  const slices: PipelineStageSlice[] = stages
-    .map((s) => ({
-      id: s.id,
-      name: s.name,
-      color: s.color || '#64748b',
-      dealCount: byStage.get(s.id)?.count ?? 0,
-      totalValue: byStage.get(s.id)?.total ?? 0,
-    }))
-    // Hide empty stages from the ring (but we'd still show them in the
-    // legend if the user wanted a full breakdown — trimming keeps the
-    // visual clean for the common case).
-    .filter((s) => s.totalValue > 0 || s.dealCount > 0)
+  // Always show all stages — even those with 0 deals
+  const slices: PipelineStageSlice[] = stages.map((s) => ({
+    id: s.id,
+    name: s.name,
+    color: s.color || '#64748b',
+    dealCount: byStage.get(s.id)?.count ?? 0,
+    totalValue: byStage.get(s.id)?.total ?? 0,
+  }))
 
   return {
     stages: slices,

@@ -1,13 +1,20 @@
 // Shared result shapes the CRM main dashboard components consume.
 
-export interface CrmMetricsBundle {
-  totalContacts: number
-  newContactsThisWeek: number
-  openDealsValue: number
+export interface DashboardMetrics {
+  newDeals: number
+  newDealsValue: number
   openDealsCount: number
-  wonThisMonthValue: number
-  wonThisMonthCount: number
-  overdueReminders: number
+  openDealsValue: number
+  wonDeals: number
+  wonDealsValue: number
+  lostDeals: number
+  lostDealsValue: number
+}
+
+export interface ReminderCountsBundle {
+  today: number
+  missed: number
+  upcoming: number
 }
 
 export interface WonLostWeek {

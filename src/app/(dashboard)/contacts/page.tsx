@@ -57,8 +57,8 @@ import { getAssignableProfiles } from '@/lib/auth/assignable-profiles';
 
 const PAGE_SIZE = 25;
 
-type ReminderTab = 'all' | 'today' | 'missed' | 'upcoming';
-interface ReminderCounts { all: number; today: number; missed: number; upcoming: number; }
+type ReminderTab = 'today_missed' | 'all' | 'today' | 'missed' | 'upcoming';
+interface ReminderCounts { today_missed: number; all: number; today: number; missed: number; upcoming: number; }
 
 interface ContactWithTags extends Contact {
   tags?: Tag[];
@@ -77,8 +77,8 @@ export default function ContactsPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
-  const [reminderTab, setReminderTab] = useState<ReminderTab>('today');
-  const [reminderCounts, setReminderCounts] = useState<ReminderCounts>({ all: 0, today: 0, missed: 0, upcoming: 0 });
+  const [reminderTab, setReminderTab] = useState<ReminderTab>('today_missed');
+  const [reminderCounts, setReminderCounts] = useState<ReminderCounts>({ today_missed: 0, all: 0, today: 0, missed: 0, upcoming: 0 });
   const [customTextFields, setCustomTextFields] = useState<CustomField[]>([]);
   const [filterFields, setFilterFields] = useState<CustomField[]>([]);
   const [activeFilters, setActiveFilters] = useState<Record<string, string[]>>({});
@@ -160,10 +160,13 @@ export default function ContactsPage() {
     const uniq = (rows: { contact_id: string | null }[]) =>
       new Set(rows.map((r) => r.contact_id).filter(Boolean)).size;
 
+    const todayCount = uniq(todayDeals.data ?? []);
+    const missedCount = uniq(missedDeals.data ?? []);
     setReminderCounts({
+      today_missed: todayCount + missedCount,
       all: allRes.count ?? 0,
-      today: uniq(todayDeals.data ?? []),
-      missed: uniq(missedDeals.data ?? []),
+      today: todayCount,
+      missed: missedCount,
       upcoming: uniq(upcomingDeals.data ?? []),
     });
   }, [supabase]);
@@ -186,9 +189,10 @@ export default function ContactsPage() {
     // Reminder tab filter — scope to contacts with matching open deal reminders
     if (reminderTab !== 'all') {
       let dealQuery = supabase.from('deals').select('contact_id').eq('status', 'open').not('contact_id', 'is', null);
-      if (reminderTab === 'today')    dealQuery = dealQuery.gte('reminder_at', now).lte('reminder_at', todayEndISO);
-      if (reminderTab === 'missed')   dealQuery = dealQuery.lt('reminder_at', now);
-      if (reminderTab === 'upcoming') dealQuery = dealQuery.gt('reminder_at', todayEndISO);
+      if (reminderTab === 'today_missed') dealQuery = dealQuery.lte('reminder_at', todayEndISO);
+      else if (reminderTab === 'today')    dealQuery = dealQuery.gte('reminder_at', now).lte('reminder_at', todayEndISO);
+      else if (reminderTab === 'missed')   dealQuery = dealQuery.lt('reminder_at', now);
+      else if (reminderTab === 'upcoming') dealQuery = dealQuery.gt('reminder_at', todayEndISO);
       const { data: dealRows } = await dealQuery;
       const contactIds = [...new Set((dealRows ?? []).map((r) => r.contact_id).filter(Boolean) as string[])];
       if (contactIds.length === 0) {
@@ -454,25 +458,28 @@ export default function ContactsPage() {
       {/* Reminder tabs + search row */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900 p-0.5">
-          {(['all','today','missed','upcoming'] as ReminderTab[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => { setReminderTab(t); setPage(0); }}
-              className={`rounded-md px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
-                reminderTab === t
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              {t.charAt(0).toUpperCase() + t.slice(1)}
-              <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] ${
-                reminderTab === t ? 'bg-white/20' : 'bg-slate-700 text-slate-400'
-              }`}>
-                {reminderCounts[t]}
-              </span>
-            </button>
-          ))}
+          {(['today_missed','all','today','missed','upcoming'] as ReminderTab[]).map((t) => {
+            const label = t === 'today_missed' ? 'Today+Missed' : t.charAt(0).toUpperCase() + t.slice(1);
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => { setReminderTab(t); setPage(0); }}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
+                  reminderTab === t
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {label}
+                <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] ${
+                  reminderTab === t ? 'bg-white/20' : 'bg-slate-700 text-slate-400'
+                }`}>
+                  {reminderCounts[t]}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         <div className="relative flex-1 min-w-[200px]">

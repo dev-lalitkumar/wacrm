@@ -330,6 +330,12 @@ export interface Deal {
   lost_reason_id?: string | null;
   /** Embedded lost reason when loaded via nested join. */
   lost_reason?: LostReason;
+  /** When the deal was closed (won/lost). Auto-set by trigger, cleared on reopen. Migration 022. */
+  closed_at?: string | null;
+  /** Profile ID of the user who closed the deal. Cleared on reopen. Migration 022. */
+  closed_by?: string | null;
+  /** Embedded closer profile when loaded via nested join. */
+  closer?: Profile;
   created_at: string;
   updated_at?: string;
   contact?: Contact;

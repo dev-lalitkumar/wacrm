@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { timeAgo } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
 import { ActivityHistory } from "@/components/shared/activity-history";
 import { ContactInfoCard } from "@/components/shared/contact-info-card";
 import { QuickFollowup } from "@/components/shared/quick-followup";
@@ -97,6 +98,7 @@ export function DealDetailView({
   onDeleted,
 }: DealDetailViewProps) {
   const supabase = createClient();
+  const { profile } = useAuth();
 
   // ─── Loaded data ───────────────────────────────────────────────────────────
   const [deal, setDeal] = useState<Deal | null>(null);
@@ -155,7 +157,7 @@ export function DealDetailView({
         supabase
           .from("deals")
           .select(
-            "*, contact:contacts(*, contact_tags(tag:tags(*)), source:sources(id, name, key)), assignee:profiles!deals_assigned_to_fkey(id, full_name, email), stage:pipeline_stages(*), source:sources(id, name, key), lost_reason:lost_reasons(id, reason)"
+            "*, contact:contacts(*, contact_tags(tag:tags(*)), source:sources(id, name, key)), assignee:profiles!deals_assigned_to_fkey(id, full_name, email), closer:profiles!deals_closed_by_fkey(id, full_name, email), stage:pipeline_stages(*), source:sources(id, name, key), lost_reason:lost_reasons(id, reason)"
           )
           .eq("id", dealId)
           .single(),
@@ -277,9 +279,11 @@ export function DealDetailView({
       return;
     }
     setStatusActing(status);
+    const payload: Record<string, unknown> = { status };
+    if (status === "won") payload.closed_by = profile?.id ?? null;
     const { error } = await supabase
       .from("deals")
-      .update({ status })
+      .update(payload)
       .eq("id", deal.id);
     setStatusActing(null);
     if (error) {
@@ -296,7 +300,7 @@ export function DealDetailView({
     if (!deal) return;
     const { error } = await supabase
       .from("deals")
-      .update({ status: "lost", lost_reason_id: reasonId })
+      .update({ status: "lost", lost_reason_id: reasonId, closed_by: profile?.id ?? null })
       .eq("id", deal.id);
     if (error) throw new Error(error.message);
     toast.success("Marked as lost");
@@ -824,6 +828,14 @@ export function DealDetailView({
                             {deal.status}
                           </span>.
                         </p>
+                        {deal.closed_at && (
+                          <p className="text-[11px] text-slate-500">
+                            Closed {formatDate(deal.closed_at)}
+                            {deal.closer && (
+                              <> by <span className="text-slate-400">{deal.closer.full_name || deal.closer.email}</span></>
+                            )}
+                          </p>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"

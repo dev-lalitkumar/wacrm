@@ -28,8 +28,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { canFilterAssignees } from "@/lib/auth/permissions";
 import { getAssignableProfiles } from "@/lib/auth/assignable-profiles";
 
-type ReminderTab = "all" | "today" | "missed" | "upcoming";
-interface ReminderCounts { all: number; today: number; missed: number; upcoming: number; }
+type ReminderTab = "today_missed" | "all" | "today" | "missed" | "upcoming";
+interface ReminderCounts { today_missed: number; all: number; today: number; missed: number; upcoming: number; }
 
 function computeReminderCounts(allDeals: Deal[]): ReminderCounts {
   const now = new Date();
@@ -42,7 +42,7 @@ function computeReminderCounts(allDeals: Deal[]): ReminderCounts {
     else if (dt <= todayEnd) today++;
     else upcoming++;
   });
-  return { all: allDeals.length, today, missed, upcoming };
+  return { today_missed: today + missed, all: allDeals.length, today, missed, upcoming };
 }
 
 function filterDealsByTab(
@@ -68,6 +68,7 @@ function filterDealsByTab(
     filtered = filtered.filter((d) => {
       if (d.status !== "open" || !d.reminder_at) return false;
       const dt = new Date(d.reminder_at);
+      if (tab === "today_missed") return dt <= todayEnd;
       if (tab === "missed") return dt < now;
       if (tab === "today") return dt >= now && dt <= todayEnd;
       if (tab === "upcoming") return dt > todayEnd;
@@ -134,8 +135,8 @@ export default function PipelinesPage() {
   const [lastFollowups, setLastFollowups] = useState<Record<string, DealLastFollowup>>({});
 
   // Reminder filter state
-  const [reminderTab, setReminderTab] = useState<ReminderTab>("today");
-  const [reminderCounts, setReminderCounts] = useState<ReminderCounts>({ all: 0, today: 0, missed: 0, upcoming: 0 });
+  const [reminderTab, setReminderTab] = useState<ReminderTab>("today_missed");
+  const [reminderCounts, setReminderCounts] = useState<ReminderCounts>({ today_missed: 0, all: 0, today: 0, missed: 0, upcoming: 0 });
   const [search, setSearch] = useState("");
 
   // Custom field filter state
@@ -371,25 +372,28 @@ export default function PipelinesPage() {
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900 p-0.5">
-            {(["all", "today", "missed", "upcoming"] as ReminderTab[]).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setReminderTab(t)}
-                className={`rounded-md px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
-                  reminderTab === t
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                {t.charAt(0).toUpperCase() + t.slice(1)}
-                <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] ${
-                  reminderTab === t ? "bg-white/20" : "bg-slate-700 text-slate-400"
-                }`}>
-                  {reminderCounts[t]}
-                </span>
-              </button>
-            ))}
+            {(["today_missed", "all", "today", "missed", "upcoming"] as ReminderTab[]).map((t) => {
+              const label = t === "today_missed" ? "Today+Missed" : t.charAt(0).toUpperCase() + t.slice(1);
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setReminderTab(t)}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
+                    reminderTab === t
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {label}
+                  <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] ${
+                    reminderTab === t ? "bg-white/20" : "bg-slate-700 text-slate-400"
+                  }`}>
+                    {reminderCounts[t]}
+                  </span>
+                </button>
+              );
+            })}
           </div>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-slate-500" />

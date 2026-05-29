@@ -25,7 +25,7 @@ interface LostDeal {
   id: string;
   title: string;
   assigned_to: string | null;
-  updated_at: string;
+  closed_at: string;
   lost_reason: { reason: string } | null;
   contact: { name: string | null; phone: string } | null;
 }
@@ -65,13 +65,13 @@ export function DealLostReport({ visibleIds, range }: Props) {
         supabase
           .from("deals")
           .select(
-            "id, title, assigned_to, updated_at, lost_reason:lost_reasons(reason), contact:contacts(name, phone)"
+            "id, title, assigned_to, closed_at, lost_reason:lost_reasons(reason), contact:contacts(name, phone)"
           )
           .eq("status", "lost")
-          .gte("updated_at", start)
-          .lte("updated_at", end)
+          .gte("closed_at", start)
+          .lte("closed_at", end)
           .in("assigned_to", visibleIds)
-          .order("updated_at", { ascending: false }),
+          .order("closed_at", { ascending: false }),
         supabase
           .from("profiles")
           .select("id, full_name, email")
@@ -268,7 +268,7 @@ export function DealLostReport({ visibleIds, range }: Props) {
                       </td>
                     )}
                     <td className="px-4 py-2.5 text-right text-slate-500 text-xs hidden lg:table-cell">
-                      {new Date(d.updated_at).toLocaleDateString("en-US", {
+                      {new Date(d.closed_at).toLocaleDateString("en-US", {
                         month: "short", day: "numeric", year: "numeric",
                       })}
                     </td>

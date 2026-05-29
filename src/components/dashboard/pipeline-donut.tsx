@@ -14,16 +14,16 @@ export function PipelineDonut({ data, loading }: PipelineDonutProps) {
   return (
     <section className="flex h-full flex-col rounded-xl border border-slate-800 bg-slate-900">
       <header className="border-b border-slate-800 px-5 py-4">
-        <h2 className="text-sm font-semibold text-white">Pipeline Value</h2>
+        <h2 className="text-sm font-semibold text-white">Open Deals</h2>
         <p className="mt-0.5 text-xs text-slate-500">
-          Open deals by stage
+          Pipeline value by stage
         </p>
       </header>
 
       <div className="flex flex-1 flex-col p-5">
         {loading || !data ? (
           <Skeleton className="h-56 w-full" />
-        ) : data.stages.length === 0 ? (
+        ) : data.stages.every((s) => s.dealCount === 0) ? (
           <EmptyState
             icon={GitBranch}
             title="No open deals yet"
