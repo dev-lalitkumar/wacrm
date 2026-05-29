@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
 
 export const metadata: Metadata = {
   title: 'Privacy Policy',
@@ -8,17 +7,9 @@ export const metadata: Metadata = {
 }
 
 export default async function PrivacyPage() {
-  const supabase = await createClient()
-  const { data: company } = await supabase
-    .from('companies')
-    .select('name, email, website')
-    .eq('id', 1)
-    .maybeSingle()
-
-  const companyName = company?.name ?? 'This Application'
-  const contactEmail = company?.email ?? 'privacy@example.com'
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ?? company?.website ?? 'https://example.com'
+  const companyName = 'Support Team'
+  const contactEmail = 'support.crm@tundla.com'
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://example.com'
   const lastUpdated = 'May 2025'
 
   return (

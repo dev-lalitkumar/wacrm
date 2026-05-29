@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
 
 export const metadata: Metadata = {
   title: 'Terms & Conditions',
@@ -8,15 +7,8 @@ export const metadata: Metadata = {
 }
 
 export default async function TermsPage() {
-  const supabase = await createClient()
-  const { data: company } = await supabase
-    .from('companies')
-    .select('name, email, website')
-    .eq('id', 1)
-    .maybeSingle()
-
-  const companyName = company?.name ?? 'This Application'
-  const contactEmail = company?.email ?? 'legal@example.com'
+  const companyName = 'Support Team'
+  const contactEmail = 'support.crm@tundla.com'
   const lastUpdated = 'May 2025'
 
   return (
