@@ -652,3 +652,105 @@ export interface WebhookRequest {
   created_contact_id?: string | null;
   created_deal_id?: string | null;
 }
+
+// ============================================================
+// Catalog & Proposals (migration 023)
+// ============================================================
+
+export interface CatalogItem {
+  id: string;
+  user_id?: string | null;
+  name: string;
+  description?: string | null;
+  price: number;
+  currency: string;
+  unit: string;
+  category?: string | null;
+  image_url?: string | null;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DealCatalogItem {
+  id: string;
+  deal_id: string;
+  catalog_item_id?: string | null;
+  name: string;
+  quantity: number;
+  notes?: string | null;
+  created_at: string;
+  catalog_item?: CatalogItem;
+}
+
+export type ProposalStatus = 'draft' | 'sent' | 'viewed' | 'accepted' | 'rejected';
+
+export interface Proposal {
+  id: string;
+  user_id?: string | null;
+  deal_id?: string | null;
+  contact_id?: string | null;
+  proposal_number: string;
+  title: string;
+  status: ProposalStatus;
+  valid_until?: string | null;
+  notes?: string | null;
+  terms?: string | null;
+  subtotal: number;
+  discount_amount: number;
+  tax_rate: number;
+  total_amount: number;
+  currency: string;
+  public_token: string;
+  created_by?: string | null;
+  sent_at?: string | null;
+  sent_by?: string | null;
+  viewed_at?: string | null;
+  accepted_at?: string | null;
+  rejected_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  contact?: Contact;
+  deal?: Deal;
+  items?: ProposalItem[];
+  history?: ProposalHistory[];
+}
+
+export interface ProposalItem {
+  id: string;
+  proposal_id: string;
+  catalog_item_id?: string | null;
+  name: string;
+  description?: string | null;
+  quantity: number;
+  unit_price: number;
+  discount_pct: number;
+  total: number;
+  sort_order: number;
+}
+
+export interface ProposalTemplate {
+  id: string;
+  user_id?: string | null;
+  channel: 'email' | 'whatsapp';
+  name: string;
+  subject?: string | null;
+  body: string;
+  is_default: boolean;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProposalHistory {
+  id: string;
+  proposal_id: string;
+  action: string;
+  channel?: string | null;
+  actor_id?: string | null;
+  recipient?: string | null;
+  metadata?: Record<string, unknown> | null;
+  created_at: string;
+  actor?: Profile;
+}

@@ -23,6 +23,8 @@ import {
   LogOut,
   User,
   X,
+  FileText,
+  Package,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -55,6 +57,8 @@ const mainNavItems: NavItem[] = [
   { href: '/pipelines', label: 'Deals', icon: Briefcase },
   { href: '/closed-deals', label: 'Closed Deals', icon: Archive },
   { href: '/contacts', label: 'Contacts', icon: Users },
+  { href: '/proposals', label: 'Proposals', icon: FileText },
+  { href: '/catalog', label: 'Catalog', icon: Package },
 ];
 
 const whatsappNavItems: NavItem[] = [

@@ -38,7 +38,122 @@ import { DealReminderSection } from "./deal-reminder-section";
 import { MarkLostDialog } from "./mark-lost-dialog";
 import { ComposeEmailDialog } from "@/components/email/compose-dialog";
 import { reminderStatus } from "@/lib/deals/reminder-status";
-import { Mail } from "lucide-react";
+import { Mail, Package, Plus, Trash2 as TrashIcon, FileText as FileTextIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
+import type { CatalogItem, DealCatalogItem } from "@/types";
+
+// ── Deal Products Tab ─────────────────────────────────────────
+function DealProductsTab({ dealId }: { dealId: string }) {
+  const supabase = createClient();
+  const [items, setItems] = useState<DealCatalogItem[]>([]);
+  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const [{ data: dealItems }, { data: catItems }] = await Promise.all([
+        supabase.from('deal_catalog_items').select('*').eq('deal_id', dealId).order('created_at'),
+        supabase.from('catalog_items').select('*').eq('is_active', true).order('name'),
+      ]);
+      if (alive) {
+        setItems((dealItems ?? []) as DealCatalogItem[]);
+        setCatalog((catItems ?? []) as CatalogItem[]);
+        setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [dealId, supabase]);
+
+  async function addItem(cat: CatalogItem) {
+    setAdding(true);
+    const { data, error } = await supabase.from('deal_catalog_items').insert({
+      deal_id: dealId,
+      catalog_item_id: cat.id,
+      name: cat.name,
+      quantity: 1,
+    }).select().single();
+    if (!error && data) setItems(prev => [...prev, data as DealCatalogItem]);
+    setAdding(false);
+    setPickerOpen(false);
+  }
+
+  async function removeItem(id: string) {
+    await supabase.from('deal_catalog_items').delete().eq('id', id);
+    setItems(prev => prev.filter(i => i.id !== id));
+  }
+
+  if (loading) return <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Interested Products</p>
+        <button
+          type="button"
+          onClick={() => setPickerOpen(true)}
+          disabled={adding}
+          className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
+        >
+          <Plus className="h-3.5 w-3.5" /> Add
+        </button>
+      </div>
+
+      {items.length === 0 ? (
+        <div className="flex flex-col items-center py-6 text-center">
+          <Package className="h-8 w-8 text-slate-700 mb-2" />
+          <p className="text-xs text-slate-500">No products added yet.</p>
+          <button type="button" onClick={() => setPickerOpen(true)} className="mt-2 text-xs text-primary hover:underline">
+            + Add product
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {items.map(item => (
+            <div key={item.id} className="flex items-center justify-between rounded-lg border border-slate-700/60 bg-slate-800/40 px-3 py-2">
+              <p className="text-sm text-slate-200 truncate">{item.name}</p>
+              <div className="flex items-center gap-2 shrink-0 ml-2">
+                <span className="text-xs text-slate-400">×{item.quantity}</span>
+                <button type="button" onClick={() => removeItem(item.id)} className="text-slate-600 hover:text-red-400 transition-colors">
+                  <TrashIcon className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Inline catalog picker popover */}
+      {pickerOpen && (
+        <div className="rounded-lg border border-slate-700 bg-slate-900 p-3 space-y-2">
+          <p className="text-xs font-semibold text-slate-400">Pick a product</p>
+          <div className="max-h-48 overflow-y-auto space-y-1">
+            {catalog.filter(c => !items.some(i => i.catalog_item_id === c.id)).map(cat => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => addItem(cat)}
+                disabled={adding}
+                className="w-full flex items-center justify-between rounded-md px-2 py-1.5 text-left hover:bg-slate-800 transition-colors"
+              >
+                <span className="text-sm text-slate-200 truncate">{cat.name}</span>
+                <span className="text-xs text-slate-500 shrink-0 ml-2">
+                  {new Intl.NumberFormat('en-US', { style: 'currency', currency: cat.currency, minimumFractionDigits: 0 }).format(cat.price)}
+                </span>
+              </button>
+            ))}
+            {catalog.filter(c => !items.some(i => i.catalog_item_id === c.id)).length === 0 && (
+              <p className="text-xs text-slate-500 text-center py-2">All catalog items already added.</p>
+            )}
+          </div>
+          <button type="button" onClick={() => setPickerOpen(false)} className="text-xs text-slate-500 hover:text-slate-300">Cancel</button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface DealDetailViewProps {
   open: boolean;
@@ -99,6 +214,7 @@ export function DealDetailView({
 }: DealDetailViewProps) {
   const supabase = createClient();
   const { profile } = useAuth();
+  const router = useRouter();
 
   // ─── Loaded data ───────────────────────────────────────────────────────────
   const [deal, setDeal] = useState<Deal | null>(null);
@@ -662,6 +778,29 @@ export function DealDetailView({
                     )}
                   </div>
                 </div>
+                <button
+                  type="button"
+                  title="Create Proposal"
+                  onClick={async () => {
+                    const res = await fetch('/api/proposals', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        title: `Proposal for ${deal.title}`,
+                        deal_id: deal.id,
+                        contact_id: deal.contact_id,
+                        seed_from_deal: true,
+                      }),
+                    });
+                    if (res.ok) {
+                      const data = await res.json();
+                      router.push(`/proposals/${data.id}`);
+                    }
+                  }}
+                  className="shrink-0 flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-primary border border-primary/30 hover:bg-primary/10 transition-colors"
+                >
+                  <FileTextIcon className="h-3.5 w-3.5" /> Proposal
+                </button>
               </div>
             </SheetHeader>
 
@@ -752,7 +891,7 @@ export function DealDetailView({
                 defaultValue="history"
                 className="flex flex-1 flex-col overflow-hidden"
               >
-                <TabsList className="shrink-0 mx-4 mt-2 grid grid-cols-3 bg-slate-800 border border-slate-700">
+                <TabsList className="shrink-0 mx-4 mt-2 grid grid-cols-4 bg-slate-800 border border-slate-700">
                   <TabsTrigger
                     value="history"
                     className="data-[state=active]:bg-slate-700 data-[state=active]:text-white text-slate-400 text-xs"
@@ -770,6 +909,12 @@ export function DealDetailView({
                     className="data-[state=active]:bg-slate-700 data-[state=active]:text-white text-slate-400 text-xs"
                   >
                     Update
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="products"
+                    className="data-[state=active]:bg-slate-700 data-[state=active]:text-white text-slate-400 text-xs"
+                  >
+                    Products
                   </TabsTrigger>
                 </TabsList>
 
@@ -1184,6 +1329,14 @@ export function DealDetailView({
                       Delete Deal
                     </button>
                   )}
+                </TabsContent>
+
+                {/* Products tab */}
+                <TabsContent
+                  value="products"
+                  className="flex-1 overflow-y-auto px-4 py-3"
+                >
+                  <DealProductsTab dealId={deal.id} />
                 </TabsContent>
               </Tabs>
             </div>
