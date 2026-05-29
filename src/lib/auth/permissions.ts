@@ -138,6 +138,12 @@ export function canManageEmailConfig(role: Role | string | null | undefined) {
   return role === 'admin' || role === 'owner'
 }
 
+// ── Meta / Facebook Integration (migration 024) ────────────────
+/** Admin + Owner can configure Facebook Login, Lead Ads, and WhatsApp coexistence */
+export function canManageMetaConfig(role: Role | string | null | undefined) {
+  return role === 'admin' || role === 'owner'
+}
+
 // ── Assignee filter (deals + contacts) ─────────────────────────
 /** Admin/Owner/Manager can filter by assignee. Executives are RLS-scoped to own data. */
 export function canFilterAssignees(role: Role | string | null | undefined) {

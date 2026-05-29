@@ -38,6 +38,7 @@ import {
   canViewWebhooks,
   canManageCompany,
   canManageEmailConfig,
+  canManageMetaConfig,
 } from '@/lib/auth/permissions';
 
 const TAB_VALUES = [
@@ -73,15 +74,20 @@ function NavSection({ children }: { children: React.ReactNode }) {
 export default function SettingsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { profile } = useAuth();
-  const showTeam = canManageTeam(profile?.role ?? null);
-  const showCustomFields = canManageCustomFields(profile?.role ?? null);
-  const showCompany = canManageCompany(profile?.role ?? null);
+  const { profile, profileLoading } = useAuth();
+  // While profile is still loading we treat everything as visible so
+  // tabs don't flash in after a short delay. Once the profile resolves
+  // the correct gates apply. This matches the pattern used by WhatsApp
+  // (always visible) and avoids a jarring layout shift for admins.
+  const role = profile?.role ?? null;
+  const showTeam = profileLoading || canManageTeam(role);
+  const showCustomFields = profileLoading || canManageCustomFields(role);
+  const showCompany = profileLoading || canManageCompany(role);
   // Sources tab is visible to everyone (read-only for non-admins).
   // Integrations tab is admin/owner/manager only.
-  const showIntegrations = canViewWebhooks(profile?.role ?? null);
-  const showEmail = canManageEmailConfig(profile?.role ?? null);
-  const showMeta = canManageEmailConfig(profile?.role ?? null);
+  const showIntegrations = profileLoading || canViewWebhooks(role);
+  const showEmail = profileLoading || canManageEmailConfig(role);
+  const showMeta = profileLoading || canManageMetaConfig(role);
 
   // The URL is the single source of truth for the active tab — no
   // local state, no sync effect. A previous revision duplicated this

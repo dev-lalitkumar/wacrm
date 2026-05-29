@@ -40,18 +40,14 @@ export function MetaConfig() {
   const loadPages = useCallback(async () => {
     setPagesLoading(true)
     try {
-      // Load pages directly from Supabase via API
       const res = await fetch('/api/meta/pages/sync', { method: 'POST' })
-      if (!res.ok) {
-        // Fallback: fetch from config only
-        return
-      }
+      if (!res.ok) return
       const data = (await res.json()) as { pages: FacebookPage[] }
       setPages(data.pages ?? [])
     } catch {
       // Ignore — pages section will show empty state
     } finally {
-      setPagesLoading(false)
+      setPagesLoading(false)  // always runs — fixes loading stuck on error
     }
   }, [])
 
