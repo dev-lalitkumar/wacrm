@@ -50,6 +50,11 @@ export interface Contact {
   source_id?: string | null;
   /** Embedded source row when loaded via nested join. */
   source?: Source;
+  /** Active reminder fields — same pattern as deals. Added in 028. */
+  reminder_type?: DealReminderType;
+  reminder_at?: string;
+  reminder_note?: string;
+  reminder_updated_at?: string;
   /** Embedded contact_tags with tag relation — present when loaded via nested join. */
   contact_tags?: Array<{ tag: Tag }>;
   created_at: string;

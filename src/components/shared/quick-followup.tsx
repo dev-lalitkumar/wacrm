@@ -3,21 +3,60 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { timeAgo } from "@/lib/utils";
-import type { Followup, FollowupChannel } from "@/types";
+import type { Followup, FollowupChannel, DealReminderType } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2 } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Loader2, Bell } from "lucide-react";
 import { toast } from "sonner";
 
 const CHANNELS: { value: FollowupChannel; label: string; icon: string }[] = [
-  { value: "whatsapp", label: "WhatsApp", icon: "💬" },
-  { value: "call",     label: "Call",     icon: "📞" },
-  { value: "email",    label: "Email",    icon: "✉️" },
-  { value: "meeting",  label: "Meeting",  icon: "🤝" },
-  { value: "other",    label: "Other",    icon: "📝" },
+  { value: "whatsapp", label: "WhatsApp", icon: "\u{1F4AC}" },
+  { value: "call",     label: "Call",     icon: "\u{1F4DE}" },
+  { value: "email",    label: "Email",    icon: "\u{2709}\u{FE0F}" },
+  { value: "meeting",  label: "Meeting",  icon: "\u{1F91D}" },
+  { value: "other",    label: "Other",    icon: "\u{1F4DD}" },
+];
+
+const REMINDER_TYPES: { value: DealReminderType; label: string }[] = [
+  { value: "followup", label: "Follow-up" },
+  { value: "call",     label: "Call" },
+  { value: "meeting",  label: "Meeting" },
+  { value: "other",    label: "Other" },
 ];
 
 type FollowupRow = Followup & { creator?: { full_name?: string; email?: string } };
+
+/* ── Date helpers (same as deal-reminder-section) ──────────── */
+
+function formatDateTimeLocal(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function addMinutes(mins: number) {
+  return formatDateTimeLocal(new Date(Date.now() + mins * 60000).toISOString());
+}
+
+function tomorrowAt9() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(9, 0, 0, 0);
+  return formatDateTimeLocal(d.toISOString());
+}
+
+function nextMonday() {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = day === 0 ? 1 : 8 - day;
+  d.setDate(d.getDate() + diff);
+  d.setHours(9, 0, 0, 0);
+  return formatDateTimeLocal(d.toISOString());
+}
+
+/* ── Component ─────────────────────────────────────────────── */
 
 interface QuickFollowupProps {
   contactId: string;
@@ -38,6 +77,12 @@ export function QuickFollowup({ contactId, dealId, onSaved, showHistory = true, 
   const [history, setHistory] = useState<FollowupRow[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [showAll, setShowAll] = useState(false);
+
+  // ── Inline reminder state (ON by default) ─────────────────
+  const [setReminder, setSetReminder] = useState(true);
+  const [reminderType, setReminderType] = useState<DealReminderType>("followup");
+  const [reminderAt, setReminderAt] = useState(tomorrowAt9());
+  const [reminderNote, setReminderNote] = useState("");
 
   // When dealId is set, scope history to that deal; otherwise show all contact followups
   const filterCol = dealId ? "deal_id" : "contact_id";
@@ -63,6 +108,13 @@ export function QuickFollowup({ contactId, dealId, onSaved, showHistory = true, 
 
   async function handleSave() {
     if (!channel || !note.trim()) return;
+
+    // Validate reminder fields when toggle is on
+    if (setReminder && !reminderAt) {
+      toast.error("Please set a reminder date & time, or turn off the reminder toggle");
+      return;
+    }
+
     setSaving(true);
 
     const { data: { session } } = await supabase.auth.getSession();
@@ -77,6 +129,7 @@ export function QuickFollowup({ contactId, dealId, onSaved, showHistory = true, 
 
     if (!profile) { toast.error("Profile not found"); setSaving(false); return; }
 
+    // 1. Insert followup row
     const row: Record<string, unknown> = {
       contact_id: contactId,
       channel,
@@ -85,16 +138,48 @@ export function QuickFollowup({ contactId, dealId, onSaved, showHistory = true, 
     };
     if (dealId) row.deal_id = dealId;
 
-    const { error } = await supabase.from("followups").insert(row);
-    if (error) {
+    const { error: fuError } = await supabase.from("followups").insert(row);
+    if (fuError) {
       toast.error("Failed to save follow-up");
-    } else {
-      toast.success("Follow-up saved");
-      setChannel("");
-      setNote("");
-      fetchHistory();
-      onSaved?.();
+      setSaving(false);
+      return;
     }
+
+    // 2. Update reminder on the entity (deal or contact) if toggle is on
+    if (setReminder && reminderAt) {
+      const reminderUpdate = {
+        reminder_type: reminderType,
+        reminder_at: new Date(reminderAt).toISOString(),
+        reminder_note: (reminderNote.trim() || note.trim()) || null,
+        reminder_updated_at: new Date().toISOString(),
+      };
+
+      const table = dealId ? "deals" : "contacts";
+      const id = dealId ?? contactId;
+
+      const { error: remError } = await supabase
+        .from(table)
+        .update(reminderUpdate)
+        .eq("id", id);
+
+      if (remError) {
+        // Followup saved but reminder failed — still a partial success
+        toast.error("Follow-up saved, but failed to set reminder");
+        setSaving(false);
+        fetchHistory();
+        onSaved?.();
+        return;
+      }
+    }
+
+    toast.success(setReminder ? "Follow-up saved & reminder set" : "Follow-up saved");
+    setChannel("");
+    setNote("");
+    setReminderNote("");
+    setReminderAt(tomorrowAt9());
+    setReminderType("followup");
+    fetchHistory();
+    onSaved?.();
     setSaving(false);
   }
 
@@ -129,6 +214,95 @@ export function QuickFollowup({ contactId, dealId, onSaved, showHistory = true, 
         className="min-h-[72px] resize-none border-slate-700 bg-slate-800 text-sm text-white placeholder:text-slate-500"
       />
 
+      {/* ── Inline "Set next reminder" toggle + fields ──────── */}
+      <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 p-2.5 space-y-2.5">
+        <button
+          type="button"
+          onClick={() => setSetReminder((v) => !v)}
+          className="flex items-center gap-2 w-full cursor-pointer group"
+        >
+          <div
+            className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
+              setReminder ? "bg-primary" : "bg-slate-600"
+            }`}
+          >
+            <span
+              className={`inline-block size-3 rounded-full bg-white transition-transform ${
+                setReminder ? "translate-x-3.5" : "translate-x-0.5"
+              }`}
+            />
+          </div>
+          <Bell className="size-3 text-slate-400" />
+          <span className="text-xs font-medium text-slate-300 group-hover:text-slate-100 transition-colors">
+            Set next reminder
+          </span>
+        </button>
+
+        {setReminder && (
+          <div className="space-y-2.5 pt-0.5">
+            {/* Reminder type chips */}
+            <div className="flex flex-wrap gap-1.5">
+              {REMINDER_TYPES.map((t) => (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => setReminderType(t.value)}
+                  className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition-all cursor-pointer ${
+                    reminderType === t.value
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-slate-200"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Quick-set date buttons */}
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { label: "+15m",  fn: () => addMinutes(15) },
+                { label: "+1h",   fn: () => addMinutes(60) },
+                { label: "Tomorrow 9 AM", fn: tomorrowAt9 },
+                { label: "Next Mon",      fn: nextMonday },
+              ].map((q) => (
+                <button
+                  key={q.label}
+                  type="button"
+                  onClick={() => setReminderAt(q.fn())}
+                  className="rounded px-2 py-0.5 text-[11px] text-slate-400 bg-slate-700/60 hover:bg-slate-700 hover:text-slate-200 transition-colors cursor-pointer"
+                >
+                  {q.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Date/time picker */}
+            <div className="space-y-1">
+              <Label className="text-slate-400 text-[11px]">When</Label>
+              <input
+                type="datetime-local"
+                value={reminderAt}
+                onChange={(e) => setReminderAt(e.target.value)}
+                className="h-7 w-full rounded-md border border-slate-700 bg-slate-800 px-2 text-xs text-white outline-none focus:border-primary [color-scheme:dark]"
+              />
+            </div>
+
+            {/* Reminder note (optional override — defaults to followup note) */}
+            <div className="space-y-1">
+              <Label className="text-slate-400 text-[11px]">Reminder note (optional — defaults to followup note)</Label>
+              <Textarea
+                value={reminderNote}
+                onChange={(e) => setReminderNote(e.target.value)}
+                placeholder={note.trim() || "What needs to happen next?"}
+                className="min-h-[48px] resize-none border-slate-700 bg-slate-800 text-xs text-white placeholder:text-slate-500"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Save button + email compose link */}
       <div className="flex items-center gap-2">
         <Button
           onClick={handleSave}
@@ -137,7 +311,7 @@ export function QuickFollowup({ contactId, dealId, onSaved, showHistory = true, 
           className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
           {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
-          Save Follow-up
+          {setReminder ? "Save Follow-up & Set Reminder" : "Save Follow-up"}
         </Button>
         {channel === "email" && onComposeEmail && (
           <button
@@ -145,7 +319,7 @@ export function QuickFollowup({ contactId, dealId, onSaved, showHistory = true, 
             onClick={onComposeEmail}
             className="text-xs text-primary hover:underline cursor-pointer"
           >
-            ✉️ Compose &amp; Send
+            {"✉️"} Compose &amp; Send
           </button>
         )}
       </div>
