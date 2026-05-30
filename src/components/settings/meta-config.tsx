@@ -73,6 +73,8 @@ export function MetaConfig() {
   useEffect(() => {
     const success = searchParams.get('meta_success')
     const error = searchParams.get('meta_error')
+    const errorDetail = searchParams.get('meta_error_detail')
+
     if (success === 'true') {
       toast.success('Facebook account connected successfully!')
       loadConfig().then((data) => {
@@ -81,14 +83,25 @@ export function MetaConfig() {
     } else if (error) {
       const messages: Record<string, string> = {
         access_denied: 'You denied access to Facebook',
-        missing_params: 'Missing OAuth parameters',
-        invalid_state: 'Invalid security token — please try again',
+        missing_params: 'Missing OAuth parameters — Facebook did not return expected values',
+        invalid_state: 'Security token mismatch — please try connecting again',
+        cookie_error: 'Could not read session cookies',
         unauthorized: 'You need to be signed in',
         forbidden: 'Only Admins and Owners can connect Facebook',
-        db_error: 'Failed to save configuration',
+        missing_env: 'Server is missing META_APP_ID or META_APP_SECRET env vars',
+        token_exchange_failed: 'Facebook token exchange failed',
+        user_info_failed: 'Could not fetch your Facebook profile',
+        db_error: 'Database error — check that migration 024 has been applied',
         unexpected: 'An unexpected error occurred',
       }
-      toast.error(messages[error] ?? `OAuth error: ${error}`)
+      const baseMsg = messages[decodeURIComponent(error)] ?? `OAuth error: ${error}`
+      // Show detail as description if available (comes from server logs)
+      toast.error(baseMsg, {
+        description: errorDetail ? decodeURIComponent(errorDetail) : undefined,
+        duration: 10000,
+      })
+      // Also log to browser console so it's visible in DevTools
+      console.error('[Meta OAuth] error:', error, errorDetail ? `— ${errorDetail}` : '')
     }
   }, [searchParams, loadConfig, fetchPagesFromDb])
 
