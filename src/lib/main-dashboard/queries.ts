@@ -233,10 +233,11 @@ export async function loadRecentFollowups(
   profileIds?: string[],
 ): Promise<RecentFollowup[]> {
   let q = db
-    .from('deal_followups')
+    .from('followups')
     .select(
       'id, channel, created_at, deal:deals(title, contact:contacts(name)), creator:profiles(full_name)',
     )
+    .not('deal_id', 'is', null)
     .order('created_at', { ascending: false })
     .limit(limit)
 
@@ -302,8 +303,9 @@ export async function loadTeamLeaderboard(
         .gte('closed_at', monthStart)
         .in('assigned_to', visibleProfileIds),
       db
-        .from('deal_followups')
+        .from('followups')
         .select('created_by, id')
+        .not('deal_id', 'is', null)
         .gte('created_at', weekAgo)
         .in('created_by', visibleProfileIds),
     ])

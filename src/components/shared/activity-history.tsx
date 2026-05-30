@@ -25,8 +25,8 @@ interface FollowupEntry {
 }
 
 interface ActivityHistoryProps {
-  entityType: "deal" | "contact";
-  entityId: string;
+  contactId: string;
+  dealId?: string;
 }
 
 const PAGE_SIZE = 20;
@@ -38,27 +38,28 @@ function formatDuration(seconds: number): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`
 }
 
-export function ActivityHistory({ entityType, entityId }: ActivityHistoryProps) {
+export function ActivityHistory({ contactId, dealId }: ActivityHistoryProps) {
   const supabase = createClient();
   const [entries, setEntries] = useState<FollowupEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [page, setPage] = useState(0);
 
+  // When dealId is set, scope followups to that deal; otherwise show all contact followups
+  const filterCol = dealId ? "deal_id" : "contact_id";
+  const filterVal = dealId ?? contactId;
+
   const fetchEntries = useCallback(async (pageNum: number) => {
     setLoading(true);
     const from = 0;
     const to = (pageNum + 1) * PAGE_SIZE - 1;
 
-    const table = entityType === "deal" ? "deal_followups" : "contact_followups";
-    const col   = entityType === "deal" ? "deal_id" : "contact_id";
-
     const promises: Promise<FollowupEntry[]>[] = [
       (async (): Promise<FollowupEntry[]> => {
         const { data } = await supabase
-          .from(table)
+          .from("followups")
           .select("id, created_at, note, channel, recording_url, call_duration, creator:profiles(full_name, email)")
-          .eq(col, entityId)
+          .eq(filterCol, filterVal)
           .order("created_at", { ascending: false })
           .range(from, to);
         return (data ?? []).map((r) => ({
@@ -74,14 +75,14 @@ export function ActivityHistory({ entityType, entityId }: ActivityHistoryProps) 
       })(),
     ];
 
-    // For contacts, also load notes
-    if (entityType === "contact") {
+    // When viewing contact-level (no dealId), also load contact notes
+    if (!dealId) {
       promises.push(
         (async (): Promise<FollowupEntry[]> => {
           const { data } = await supabase
             .from("contact_notes")
             .select("id, created_at, note_text, creator:profiles(full_name, email)")
-            .eq("contact_id", entityId)
+            .eq("contact_id", contactId)
             .order("created_at", { ascending: false })
             .range(from, to);
           return (data ?? []).map((r) => ({
@@ -105,7 +106,7 @@ export function ActivityHistory({ entityType, entityId }: ActivityHistoryProps) 
     setEntries(merged);
     setHasMore(merged.length === (pageNum + 1) * PAGE_SIZE);
     setLoading(false);
-  }, [supabase, entityType, entityId]);
+  }, [supabase, filterCol, filterVal, contactId, dealId]);
 
   useEffect(() => {
     // Reset list + cursor whenever the entity changes — these are

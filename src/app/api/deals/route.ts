@@ -27,6 +27,9 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
+  if (!body.contact_id) {
+    return NextResponse.json({ error: 'contact_id is required — every deal must belong to a contact' }, { status: 400 })
+  }
   if (!body.pipeline_id) {
     return NextResponse.json({ error: 'pipeline_id is required' }, { status: 400 })
   }
@@ -45,7 +48,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       stage_id: body.stage_id,
       source_id: body.source_id,
       title: body.title ?? null,
-      contact_id: body.contact_id ?? null,
+      contact_id: body.contact_id,
       value: body.value ?? 0,
       currency: body.currency ?? 'USD',
       expected_close_date: body.expected_close_date ?? null,

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { timeAgo } from "@/lib/utils";
-import type { DealFollowup, ContactFollowup, FollowupChannel } from "@/types";
+import type { Followup, FollowupChannel } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
@@ -17,11 +17,11 @@ const CHANNELS: { value: FollowupChannel; label: string; icon: string }[] = [
   { value: "other",    label: "Other",    icon: "📝" },
 ];
 
-type Followup = (DealFollowup | ContactFollowup) & { creator?: { full_name?: string; email?: string } };
+type FollowupRow = Followup & { creator?: { full_name?: string; email?: string } };
 
 interface QuickFollowupProps {
-  entityType: "deal" | "contact";
-  entityId: string;
+  contactId: string;
+  dealId?: string;
   onSaved?: () => void;
   /** When false, hides the recent-history list. Defaults to true. */
   showHistory?: boolean;
@@ -29,31 +29,32 @@ interface QuickFollowupProps {
   onComposeEmail?: () => void;
 }
 
-export function QuickFollowup({ entityType, entityId, onSaved, showHistory = true, onComposeEmail }: QuickFollowupProps) {
+export function QuickFollowup({ contactId, dealId, onSaved, showHistory = true, onComposeEmail }: QuickFollowupProps) {
   const supabase = createClient();
 
   const [channel, setChannel] = useState<FollowupChannel | "">("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
-  const [history, setHistory] = useState<Followup[]>([]);
+  const [history, setHistory] = useState<FollowupRow[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
-  const table = entityType === "deal" ? "deal_followups" : "contact_followups";
-  const idCol  = entityType === "deal" ? "deal_id" : "contact_id";
+  // When dealId is set, scope history to that deal; otherwise show all contact followups
+  const filterCol = dealId ? "deal_id" : "contact_id";
+  const filterVal = dealId ?? contactId;
 
   const fetchHistory = useCallback(async () => {
-    if (!entityId) return;
+    if (!filterVal) return;
     setLoadingHistory(true);
     const { data } = await supabase
-      .from(table)
+      .from("followups")
       .select("*, creator:profiles(full_name, email)")
-      .eq(idCol, entityId)
+      .eq(filterCol, filterVal)
       .order("created_at", { ascending: false })
       .limit(showAll ? 50 : 6);
-    setHistory((data ?? []) as Followup[]);
+    setHistory((data ?? []) as FollowupRow[]);
     setLoadingHistory(false);
-  }, [supabase, table, idCol, entityId, showAll]);
+  }, [supabase, filterCol, filterVal, showAll]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -77,13 +78,14 @@ export function QuickFollowup({ entityType, entityId, onSaved, showHistory = tru
     if (!profile) { toast.error("Profile not found"); setSaving(false); return; }
 
     const row: Record<string, unknown> = {
-      [idCol]: entityId,
+      contact_id: contactId,
       channel,
       note: note.trim(),
       created_by: profile.id,
     };
+    if (dealId) row.deal_id = dealId;
 
-    const { error } = await supabase.from(table).insert(row);
+    const { error } = await supabase.from("followups").insert(row);
     if (error) {
       toast.error("Failed to save follow-up");
     } else {

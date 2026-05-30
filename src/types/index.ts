@@ -93,9 +93,14 @@ export interface ContactCustomValue {
 export type FollowupChannel = 'whatsapp' | 'call' | 'email' | 'meeting' | 'other';
 export type DealReminderType = 'followup' | 'call' | 'meeting' | 'other';
 
-export interface DealFollowup {
+/**
+ * Unified followup record (migration 027).
+ * Every followup belongs to a contact; optionally linked to a deal.
+ */
+export interface Followup {
   id: string;
-  deal_id: string;
+  contact_id: string;
+  deal_id?: string | null;
   channel: FollowupChannel;
   note: string;
   created_by: string;
@@ -107,19 +112,10 @@ export interface DealFollowup {
   call_duration?: number | null;
 }
 
-export interface ContactFollowup {
-  id: string;
-  contact_id: string;
-  channel: FollowupChannel;
-  note: string;
-  created_by: string;
-  created_at: string;
-  creator?: Profile;
-  // Call Center metadata (migration 026)
-  call_log_id?: string | null;
-  recording_url?: string | null;
-  call_duration?: number | null;
-}
+/** @deprecated Use {@link Followup} instead — kept for backward compat during migration. */
+export type DealFollowup = Followup;
+/** @deprecated Use {@link Followup} instead — kept for backward compat during migration. */
+export type ContactFollowup = Followup;
 
 export interface ContactNote {
   id: string;
@@ -311,10 +307,10 @@ export interface Deal {
   pipeline_id: string;
   stage_id: string;
   /**
-   * Nullable after migration 004 — becomes NULL when the referenced
-   * contact is deleted (ON DELETE SET NULL). History preserved.
+   * Required since migration 027 — every deal must belong to a contact.
+   * ON DELETE RESTRICT prevents deleting a contact that still has deals.
    */
-  contact_id: string | null;
+  contact_id: string;
   conversation_id?: string;
   assigned_to?: string;
   title: string;

@@ -294,7 +294,7 @@ export function DealDetailView({
           .order("full_name"),
         supabase.from("tags").select("*").order("name"),
         supabase
-          .from("deal_followups")
+          .from("followups")
           .select("channel, created_at")
           .eq("deal_id", dealId)
           .order("created_at", { ascending: false })
@@ -923,7 +923,7 @@ export function DealDetailView({
                   value="history"
                   className="flex-1 overflow-y-auto px-4 py-3"
                 >
-                  <ActivityHistory entityType="deal" entityId={deal.id} />
+                  <ActivityHistory contactId={deal.contact_id} dealId={deal.id} />
                 </TabsContent>
 
                 {/* Followup tab */}
@@ -1017,8 +1017,8 @@ export function DealDetailView({
                     onToggle={() => setFollowupOpen((p) => !p)}
                   >
                     <QuickFollowup
-                      entityType="deal"
-                      entityId={deal.id}
+                      contactId={deal.contact_id}
+                      dealId={deal.id}
                       onSaved={() => { fetchAll(); }}
                       showHistory={false}
                       onComposeEmail={deal.contact?.email ? () => setEmailComposeOpen(true) : undefined}

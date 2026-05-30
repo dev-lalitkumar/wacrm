@@ -69,8 +69,8 @@ export function EmployeeReport({ visibleIds, range }: Props) {
         .lte("created_at", end)
         .in("assigned_to", visibleIds),
       supabase
-        .from("deal_followups")
-        .select("created_by, created_at, deal:deals(reminder_at)")
+        .from("followups")
+        .select("created_by, created_at, deal_id, deal:deals(reminder_at)")
         .gte("created_at", start)
         .lte("created_at", end)
         .in("created_by", visibleIds),

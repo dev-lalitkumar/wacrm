@@ -21,7 +21,8 @@ export interface CreateDealInput {
    * `deriveDealTitle()`. Falls back to 'New Lead'.
    */
   title?: string | null
-  contact_id?: string | null
+  /** Required — every deal must belong to a contact (enforced since migration 027). */
+  contact_id: string
   value?: number
   currency?: string
   /** NULL = not set; rep fills it in manually. */
@@ -75,6 +76,9 @@ export async function createDeal(
   supabase: SupabaseClient,
   data: CreateDealInput,
 ): Promise<CreateDealResult> {
+  if (!data.contact_id) {
+    throw new Error('createDeal: contact_id is required — every deal must belong to a contact')
+  }
   if (!data.source_id) {
     throw new Error('createDeal: source_id is required')
   }
@@ -95,7 +99,7 @@ export async function createDeal(
       title,
       value: data.value ?? 0,
       currency: data.currency ?? 'USD',
-      contact_id: data.contact_id ?? null,
+      contact_id: data.contact_id,
       pipeline_id: data.pipeline_id,
       stage_id: data.stage_id,
       assigned_to: data.assigned_to ?? null,

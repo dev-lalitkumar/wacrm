@@ -116,7 +116,7 @@ export function ContactDetailView({
           .order('sort_order'),
         profilePromise,
         supabase
-          .from('contact_followups')
+          .from('followups')
           .select('channel, created_at')
           .eq('contact_id', contactId)
           .order('created_at', { ascending: false })
@@ -518,7 +518,7 @@ export function ContactDetailView({
                 className="flex-1 overflow-y-auto px-4 py-3"
               >
                 {contactId && (
-                  <ActivityHistory entityType="contact" entityId={contactId} />
+                  <ActivityHistory contactId={contactId} />
                 )}
               </TabsContent>
 
@@ -536,8 +536,7 @@ export function ContactDetailView({
                     onToggle={() => setFollowupOpen((p) => !p)}
                   >
                     <QuickFollowup
-                      entityType="contact"
-                      entityId={contactId}
+                      contactId={contactId}
                       onSaved={() => { fetchAll(); }}
                       showHistory={false}
                       onComposeEmail={contact?.email ? () => setEmailComposeOpen(true) : undefined}

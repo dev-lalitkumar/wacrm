@@ -59,53 +59,37 @@ export function FollowupReport({ visibleIds, range }: Props) {
       const start = range.startDate.toISOString();
       const end = range.endDate.toISOString();
 
-      const [dealFURes, contactFURes] = await Promise.all([
-        supabase
-          .from("deal_followups")
-          .select("channel, created_at, deal:deals(reminder_at)")
-          .gte("created_at", start)
-          .lte("created_at", end)
-          .in("created_by", visibleIds),
-        supabase
-          .from("contact_followups")
-          .select("channel, created_at")
-          .gte("created_at", start)
-          .lte("created_at", end)
-          .in("created_by", visibleIds),
-      ]);
+      const { data: followupsData } = await supabase
+        .from("followups")
+        .select("channel, created_at, deal_id, deal:deals(reminder_at)")
+        .gte("created_at", start)
+        .lte("created_at", end)
+        .in("created_by", visibleIds);
 
       if (cancelled) return;
 
       const counts: Record<string, number> = {};
       let onTimeCnt = 0;
 
-      const dealFollowups = (dealFURes.data ?? []) as unknown as Array<{
+      const allFollowups = (followupsData ?? []) as unknown as Array<{
         channel: string;
         created_at: string;
+        deal_id: string | null;
         deal: { reminder_at: string | null } | null;
       }>;
-      const contactFollowups = (contactFURes.data ?? []) as Array<{
-        channel: string;
-        created_at: string;
-      }>;
 
-      dealFollowups.forEach((fu) => {
+      allFollowups.forEach((fu) => {
         const ch = fu.channel as Channel;
         counts[ch] = (counts[ch] ?? 0) + 1;
-        // On-time: logged before or at reminder_at
-        if (fu.deal?.reminder_at) {
+        // On-time: logged before or at reminder_at (only for deal-linked followups)
+        if (fu.deal_id && fu.deal?.reminder_at) {
           const loggedAt = new Date(fu.created_at).getTime();
           const reminderAt = new Date(fu.deal.reminder_at).getTime();
           if (loggedAt <= reminderAt) onTimeCnt++;
         }
       });
-      contactFollowups.forEach((fu) => {
-        const ch = fu.channel as Channel;
-        counts[ch] = (counts[ch] ?? 0) + 1;
-      });
 
-      const totalCount =
-        dealFollowups.length + contactFollowups.length;
+      const totalCount = allFollowups.length;
 
       const data = ALL_CHANNELS.map((ch) => ({
         channel: ch,

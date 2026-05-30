@@ -12,8 +12,8 @@ import { phonesMatch } from '@/lib/whatsapp/phone-utils'
  *
  * On completion:
  *   1. Updates telephony_call_logs with status, duration, recording_url
- *   2. Auto-inserts a contact_followup (channel='call') with call metadata
- *   3. Auto-inserts a deal_followup if deal_id known
+ *   2. Auto-inserts a single followup (channel='call') with call metadata
+ *      and optional deal_id when known
  */
 export async function POST(
   req: NextRequest,
@@ -152,40 +152,26 @@ async function processWebhook(providerKey: string, payload: Record<string, unkno
     }
   }
 
-  // Auto-create followup entries for terminal statuses
+  // Auto-create a single followup entry for terminal statuses
   const isTerminal = ['completed', 'no_answer', 'busy', 'failed', 'canceled'].includes(callStatus)
-  if (!isTerminal || !logId) return
+  if (!isTerminal || !logId || !contactId) return
 
   const note = buildCallNote(callStatus, duration, recordingUrl)
 
-  if (contactId) {
-    const { error: cfErr } = await admin.from('contact_followups').insert({
-      contact_id: contactId,
-      channel: 'call',
-      note,
-      created_by: initiatedBy ?? undefined,
-      call_log_id: logId,
-      recording_url: recordingUrl,
-      call_duration: duration,
-    })
-    if (cfErr) {
-      console.error('[telephony/webhook] contact_followup insert error:', cfErr.message)
-    }
+  const row: Record<string, unknown> = {
+    contact_id: contactId,
+    channel: 'call',
+    note,
+    created_by: initiatedBy ?? undefined,
+    call_log_id: logId,
+    recording_url: recordingUrl,
+    call_duration: duration,
   }
+  if (dealId) row.deal_id = dealId
 
-  if (dealId) {
-    const { error: dfErr } = await admin.from('deal_followups').insert({
-      deal_id: dealId,
-      channel: 'call',
-      note,
-      created_by: initiatedBy ?? undefined,
-      call_log_id: logId,
-      recording_url: recordingUrl,
-      call_duration: duration,
-    })
-    if (dfErr) {
-      console.error('[telephony/webhook] deal_followup insert error:', dfErr.message)
-    }
+  const { error: fuErr } = await admin.from('followups').insert(row)
+  if (fuErr) {
+    console.error('[telephony/webhook] followup insert error:', fuErr.message)
   }
 }
 

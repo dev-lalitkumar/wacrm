@@ -173,7 +173,7 @@ export default function PipelinesPage() {
   const loadLastFollowups = useCallback(async (dealIds: string[]) => {
     if (dealIds.length === 0) return {} as Record<string, DealLastFollowup>;
     const { data } = await supabase
-      .from("deal_followups")
+      .from("followups")
       .select("deal_id, channel, created_at")
       .in("deal_id", dealIds)
       .order("created_at", { ascending: false });

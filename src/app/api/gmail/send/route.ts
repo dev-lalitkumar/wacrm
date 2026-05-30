@@ -134,17 +134,15 @@ export async function POST(request: NextRequest) {
 
     // Auto-log a followup if contact_id is provided
     if (contact_id) {
-      // Log on deal_followups if deal_id given, otherwise contact_followups
-      const followupTable = deal_id ? 'deal_followups' : 'contact_followups'
-      const followupIdCol = deal_id ? 'deal_id' : 'contact_id'
-      const followupEntityId = deal_id ?? contact_id
-
-      await supabase.from(followupTable).insert({
-        [followupIdCol]: followupEntityId,
+      const row: Record<string, unknown> = {
+        contact_id,
         channel: 'email',
         note: `Email sent: "${subject.trim()}" to ${toEmails.join(', ')}`,
         created_by: profile.id,
-      })
+      }
+      if (deal_id) row.deal_id = deal_id
+
+      await supabase.from('followups').insert(row)
     }
 
     return NextResponse.json({
