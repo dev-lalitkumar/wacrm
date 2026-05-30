@@ -24,12 +24,19 @@ export function MetaConfig() {
 
   const loadConfig = useCallback(async () => {
     try {
-      const res = await fetch('/api/meta/config')
-      if (!res.ok) throw new Error('Failed to fetch')
+      // no-store prevents Next.js / browser from serving a stale cached
+      // response that was fetched before the DB was written.
+      const res = await fetch('/api/meta/config', { cache: 'no-store' })
+      if (!res.ok) {
+        console.error('[MetaConfig] /api/meta/config returned', res.status, res.statusText)
+        throw new Error(`HTTP ${res.status}`)
+      }
       const data = (await res.json()) as FacebookConfigResponse
+      console.log('[MetaConfig] config response:', data)
       setConfig(data)
       return data
-    } catch {
+    } catch (err) {
+      console.error('[MetaConfig] loadConfig failed:', err)
       setConfig(null)
       return null
     } finally {
