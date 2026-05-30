@@ -30,7 +30,7 @@ export async function GET() {
 
     const { data: config, error: configErr } = await admin
       .from('facebook_config')
-      .select('status, fb_user_name, fb_user_email, token_expires_at, connected_at')
+      .select('status, fb_user_name, fb_user_email, fb_user_picture, token_expires_at, connected_at')
       .eq('id', 1)
       .maybeSingle()
 
@@ -60,6 +60,7 @@ export async function GET() {
       status: 'connected',
       fb_user_name: config.fb_user_name,
       fb_user_email: config.fb_user_email,
+      fb_user_picture: config.fb_user_picture ?? null,
       token_expires_at: config.token_expires_at,
       connected_at: config.connected_at,
       page_count: pageCount ?? 0,

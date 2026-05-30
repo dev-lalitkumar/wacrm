@@ -60,12 +60,12 @@ export async function getLongLivedUserToken(
   )
 }
 
-/** Fetch the connected Facebook user's basic profile. */
+/** Fetch the connected Facebook user's basic profile including picture. */
 export async function getFacebookUserInfo(
   token: string,
-): Promise<{ id: string; name: string; email?: string }> {
-  return graphRequest<{ id: string; name: string; email?: string }>(
-    `/me?fields=id,name,email&access_token=${encodeURIComponent(token)}`,
+): Promise<{ id: string; name: string; email?: string; picture?: { data: { url: string } } }> {
+  return graphRequest<{ id: string; name: string; email?: string; picture?: { data: { url: string } } }>(
+    `/me?fields=id,name,email,picture.type(large)&access_token=${encodeURIComponent(token)}`,
   )
 }
 

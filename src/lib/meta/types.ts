@@ -65,6 +65,7 @@ export interface FacebookConfigResponse {
   status: FacebookConfigStatus
   fb_user_name: string | null
   fb_user_email: string | null
+  fb_user_picture: string | null
   token_expires_at: number | null
   page_count: number
 }

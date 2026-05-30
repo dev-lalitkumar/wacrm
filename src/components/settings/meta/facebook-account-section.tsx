@@ -8,6 +8,7 @@ import {
   Unplug,
   RefreshCw,
   ExternalLink,
+  User,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -41,7 +42,7 @@ function TokenExpiryBadge({ expiresAt }: { expiresAt: number | null }) {
   if (daysLeft <= 7) {
     return (
       <Badge variant="destructive" className="ml-2 text-xs">
-        Token expires in {daysLeft} day{daysLeft !== 1 ? 's' : ''} — reconnect soon to keep page sync working
+        Token expires in {daysLeft} day{daysLeft !== 1 ? 's' : ''} — reconnect soon
       </Badge>
     )
   }
@@ -84,32 +85,50 @@ export function FacebookAccountSection({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+
+        {/* ── Connected state ───────────────────────────────── */}
         {isConnected && config && (
-          <Alert className="border-primary/30 bg-primary/5">
-            <CheckCircle2 className="size-4 text-primary" />
-            <AlertTitle className="text-primary flex items-center gap-2">
-              Connected
-              <TokenExpiryBadge expiresAt={config.token_expires_at} />
-            </AlertTitle>
-            <AlertDescription className="space-y-1.5 text-slate-300">
-              <div>
-                Signed in as{' '}
-                <span className="font-semibold text-white">{config.fb_user_name}</span>
-                {config.fb_user_email && (
-                  <span className="text-slate-400"> ({config.fb_user_email})</span>
+          <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-4">
+            <div className="flex items-start gap-3">
+              {/* Profile picture */}
+              <div className="shrink-0">
+                {config.fb_user_picture ? (
+                  <img
+                    src={config.fb_user_picture}
+                    alt={config.fb_user_name ?? 'Facebook profile'}
+                    className="size-12 rounded-full object-cover border-2 border-green-500/30"
+                  />
+                ) : (
+                  <div className="size-12 rounded-full bg-[#1877F2]/20 border-2 border-[#1877F2]/30 flex items-center justify-center">
+                    <User className="size-6 text-[#1877F2]" />
+                  </div>
                 )}
-                {' · '}
-                <span className="text-slate-400">{config.page_count} page{config.page_count !== 1 ? 's' : ''} available</span>
               </div>
-              <div className="flex items-center gap-1.5 text-xs">
-                <span className="inline-flex size-2 rounded-full bg-green-400" />
-                <span className="text-green-400 font-medium">Lead capture active</span>
-                <span className="text-slate-500">— page tokens never expire; leads will continue to arrive even if you need to reconnect</span>
+
+              {/* Profile info */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <CheckCircle2 className="size-4 shrink-0 text-green-400" />
+                  <span className="font-semibold text-white">{config.fb_user_name}</span>
+                  <TokenExpiryBadge expiresAt={config.token_expires_at} />
+                </div>
+                {config.fb_user_email && (
+                  <p className="text-sm text-slate-400 mt-0.5">{config.fb_user_email}</p>
+                )}
+                <p className="text-sm text-slate-400 mt-0.5">
+                  {config.page_count} page{config.page_count !== 1 ? 's' : ''} available
+                </p>
+                <div className="flex items-center gap-1.5 mt-2 text-xs">
+                  <span className="inline-flex size-2 rounded-full bg-green-400 animate-pulse" />
+                  <span className="text-green-400 font-medium">Lead capture active</span>
+                  <span className="text-slate-500 hidden sm:inline">— page tokens never expire</span>
+                </div>
               </div>
-            </AlertDescription>
-          </Alert>
+            </div>
+          </div>
         )}
 
+        {/* ── Error state ───────────────────────────────────── */}
         {config?.status === 'error' && (
           <Alert className="border-red-500/30 bg-red-500/5">
             <AlertTriangle className="size-4 text-red-400" />
@@ -120,16 +139,18 @@ export function FacebookAccountSection({
           </Alert>
         )}
 
+        {/* ── Disconnected state ────────────────────────────── */}
         {!isConnected && config?.status === 'disconnected' && isConfigured && (
           <Alert className="border-slate-700 bg-slate-800/50">
             <XCircle className="size-4 text-slate-400" />
             <AlertTitle className="text-slate-300">Disconnected</AlertTitle>
             <AlertDescription className="text-slate-400">
-              Click &quot;Connect Facebook&quot; to authorize your Facebook account and start capturing leads.
+              Click &quot;Connect Facebook&quot; to authorize your account and start capturing leads.
             </AlertDescription>
           </Alert>
         )}
 
+        {/* ── Not configured ────────────────────────────────── */}
         {!isConfigured && (
           <Alert className="border-amber-500/30 bg-amber-500/5">
             <AlertTriangle className="size-4 text-amber-400" />
@@ -144,6 +165,7 @@ export function FacebookAccountSection({
           </Alert>
         )}
 
+        {/* ── Action buttons ────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-3">
           {isConnected ? (
             <>
@@ -171,7 +193,7 @@ export function FacebookAccountSection({
                 ) : (
                   <Unplug className="size-4" />
                 )}
-                Disconnect Facebook
+                Disconnect
               </Button>
             </>
           ) : (

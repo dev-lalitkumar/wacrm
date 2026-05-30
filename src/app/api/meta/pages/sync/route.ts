@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/admin-client'
 import { requireRole, isErrorResponse } from '@/lib/auth/require-role'
-import { decrypt } from '@/lib/encryption'
-import { encrypt } from '@/lib/encryption'
-import { getPages } from '@/lib/meta/facebook-api'
+import { decrypt, encrypt } from '@/lib/encryption'
+import { getPages, getFacebookUserInfo } from '@/lib/meta/facebook-api'
 
 /**
  * POST /api/meta/pages/sync
  *
  * Re-fetches the admin's Facebook pages and upserts them.
+ * Also refreshes the stored profile picture.
  * Admin/Owner only.
  */
 export async function POST() {
@@ -16,11 +17,13 @@ export async function POST() {
     const caller = await requireRole(['admin', 'owner'])
     if (isErrorResponse(caller)) return caller
 
+    // Use admin client to read config (bypasses RLS on singleton)
+    const admin = supabaseAdmin()
     const supabase = await createClient()
 
-    const { data: config } = await supabase
+    const { data: config } = await admin
       .from('facebook_config')
-      .select('user_token, status')
+      .select('user_token, status, fb_user_picture')
       .eq('id', 1)
       .maybeSingle()
 
@@ -32,6 +35,22 @@ export async function POST() {
     }
 
     const longToken = decrypt(config.user_token)
+
+    // Refresh profile picture if missing
+    if (!config.fb_user_picture) {
+      try {
+        const fbUser = await getFacebookUserInfo(longToken)
+        if (fbUser.picture?.data?.url) {
+          await admin
+            .from('facebook_config')
+            .update({ fb_user_picture: fbUser.picture.data.url, updated_at: new Date().toISOString() })
+            .eq('id', 1)
+        }
+      } catch {
+        // Non-fatal
+      }
+    }
+
     const pages = await getPages(longToken)
 
     if (pages.length > 0) {

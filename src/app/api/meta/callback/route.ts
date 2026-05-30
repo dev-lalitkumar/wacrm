@@ -134,7 +134,7 @@ export async function GET(request: NextRequest) {
   }
 
   // ── 7. Fetch Facebook user info ───────────────────────────
-  let fbUser: { id: string; name: string; email?: string }
+  let fbUser: { id: string; name: string; email?: string; picture?: { data: { url: string } } }
   try {
     fbUser = await getFacebookUserInfo(longToken)
     console.log('[meta/callback] Got FB user info for user ID:', fbUser.id)
@@ -171,6 +171,7 @@ export async function GET(request: NextRequest) {
       fb_user_id: fbUser.id,
       fb_user_name: fbUser.name,
       fb_user_email: fbUser.email ?? null,
+      fb_user_picture: fbUser.picture?.data?.url ?? null,
       token_expires_at: tokenExpiresAt,
       status: 'connected',
       connected_at: new Date().toISOString(),
