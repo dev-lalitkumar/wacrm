@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/admin-client'
 import { encrypt } from '@/lib/encryption'
 import {
   exchangeCodeForToken,
@@ -157,9 +158,15 @@ export async function GET(request: NextRequest) {
   }
 
   // ── 9. Save to facebook_config ────────────────────────────
-  const { error: configErr } = await supabase
+  // Use admin client (bypasses RLS) + upsert (creates row if missing).
+  // Session-client UPDATE on this table can silently skip rows when the
+  // RLS USING clause isn't satisfied in the callback request context,
+  // returning success with 0 rows written.
+  const admin = supabaseAdmin()
+  const { error: configErr } = await admin
     .from('facebook_config')
-    .update({
+    .upsert({
+      id: 1,
       user_token: encrypt(longToken),
       fb_user_id: fbUser.id,
       fb_user_name: fbUser.name,
@@ -169,11 +176,10 @@ export async function GET(request: NextRequest) {
       connected_at: new Date().toISOString(),
       connected_by: profile.id,
       updated_at: new Date().toISOString(),
-    })
-    .eq('id', 1)
+    }, { onConflict: 'id' })
 
   if (configErr) {
-    console.error('[meta/callback] facebook_config update error:', configErr.message, '| code:', configErr.code)
+    console.error('[meta/callback] facebook_config upsert error:', configErr.message, '| code:', configErr.code)
     const hint = configErr.code === '42P01'
       ? 'The facebook_config table does not exist. Apply migration 024 first.'
       : configErr.message
@@ -193,7 +199,7 @@ export async function GET(request: NextRequest) {
       updated_at: new Date().toISOString(),
     }))
 
-    const { error: pagesErr } = await supabase
+    const { error: pagesErr } = await admin
       .from('facebook_pages')
       .upsert(pageRows, { onConflict: 'id', ignoreDuplicates: false })
 

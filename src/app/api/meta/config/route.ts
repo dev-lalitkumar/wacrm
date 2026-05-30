@@ -1,15 +1,22 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, isErrorResponse } from '@/lib/auth/require-role'
+import { supabaseAdmin } from '@/lib/supabase/admin-client'
 
 /**
  * GET /api/meta/config
  *
  * Returns Facebook connection status. Any authenticated user may call
  * this. Never exposes tokens.
+ *
+ * We verify auth with the session client, then read config with the
+ * admin client. facebook_config is org-wide (singleton), not user-
+ * scoped, so reading it through RLS can silently return null when the
+ * RLS policy isn't satisfied for that request context.
  */
 export async function GET() {
   try {
+    // Verify the caller is authenticated
     const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
@@ -18,13 +25,20 @@ export async function GET() {
 
     const configured = !!(process.env.META_APP_ID && process.env.META_APP_SECRET)
 
-    const { data: config } = await supabase
+    // Use admin client to read — bypasses RLS on the singleton row
+    const admin = supabaseAdmin()
+
+    const { data: config, error: configErr } = await admin
       .from('facebook_config')
       .select('status, fb_user_name, fb_user_email, token_expires_at, connected_at')
       .eq('id', 1)
       .maybeSingle()
 
-    const { count: pageCount } = await supabase
+    if (configErr) {
+      console.error('[meta/config] GET db error:', configErr.message)
+    }
+
+    const { count: pageCount } = await admin
       .from('facebook_pages')
       .select('id', { count: 'exact', head: true })
 
@@ -67,10 +81,10 @@ export async function DELETE() {
     const caller = await requireRole(['admin', 'owner'])
     if (isErrorResponse(caller)) return caller
 
-    const supabase = await createClient()
+    const admin = supabaseAdmin()
 
     // Pages cascade-deletes forms + mappings via FK
-    const { error: pagesErr } = await supabase
+    const { error: pagesErr } = await admin
       .from('facebook_pages')
       .delete()
       .neq('id', '')
@@ -79,9 +93,10 @@ export async function DELETE() {
       console.error('[meta/config] DELETE pages error:', pagesErr)
     }
 
-    const { error: configErr } = await supabase
+    const { error: configErr } = await admin
       .from('facebook_config')
-      .update({
+      .upsert({
+        id: 1,
         user_token: null,
         fb_user_id: null,
         fb_user_name: null,
@@ -91,8 +106,7 @@ export async function DELETE() {
         connected_at: null,
         connected_by: null,
         updated_at: new Date().toISOString(),
-      })
-      .eq('id', 1)
+      }, { onConflict: 'id' })
 
     if (configErr) {
       console.error('[meta/config] DELETE config error:', configErr)
