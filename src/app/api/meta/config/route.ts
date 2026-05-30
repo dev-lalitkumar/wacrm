@@ -2,21 +2,17 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, isErrorResponse } from '@/lib/auth/require-role'
 import { supabaseAdmin } from '@/lib/supabase/admin-client'
+import { decrypt } from '@/lib/encryption'
+import { unsubscribePageFromLeadgen } from '@/lib/meta/facebook-api'
 
 /**
  * GET /api/meta/config
  *
  * Returns Facebook connection status. Any authenticated user may call
  * this. Never exposes tokens.
- *
- * We verify auth with the session client, then read config with the
- * admin client. facebook_config is org-wide (singleton), not user-
- * scoped, so reading it through RLS can silently return null when the
- * RLS policy isn't satisfied for that request context.
  */
 export async function GET() {
   try {
-    // Verify the caller is authenticated
     const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
@@ -25,7 +21,8 @@ export async function GET() {
 
     const configured = !!(process.env.META_APP_ID && process.env.META_APP_SECRET)
 
-    // Use admin client to read — bypasses RLS on the singleton row
+    // Use admin client — facebook_config is org-wide singleton; session
+    // client RLS can silently return null in some request contexts.
     const admin = supabaseAdmin()
 
     const { data: config, error: configErr } = await admin
@@ -49,6 +46,7 @@ export async function GET() {
         status: config?.status ?? 'disconnected',
         fb_user_name: null,
         fb_user_email: null,
+        fb_user_picture: null,
         token_expires_at: null,
         page_count: 0,
       })
@@ -74,7 +72,11 @@ export async function GET() {
 /**
  * DELETE /api/meta/config
  *
- * Disconnect Facebook — clears tokens, pages, forms, mappings.
+ * Full disconnect:
+ *   1. Unsubscribe all subscribed pages from Meta leadgen webhook
+ *   2. Delete all pages / forms / mappings from DB (cascade)
+ *   3. Clear facebook_config → status = 'disconnected'
+ *
  * Admin/Owner only.
  */
 export async function DELETE() {
@@ -84,16 +86,44 @@ export async function DELETE() {
 
     const admin = supabaseAdmin()
 
-    // Pages cascade-deletes forms + mappings via FK
+    // ── 1. Unsubscribe pages from Meta API ────────────────────
+    const { data: subscribedPages } = await admin
+      .from('facebook_pages')
+      .select('id, access_token')
+      .eq('is_subscribed', true)
+
+    if (subscribedPages && subscribedPages.length > 0) {
+      const unsubscribeResults = await Promise.allSettled(
+        subscribedPages.map(async (page) => {
+          try {
+            const pageToken = decrypt(page.access_token)
+            await unsubscribePageFromLeadgen(page.id, pageToken)
+            console.log(`[meta/config] Unsubscribed page ${page.id} from leadgen`)
+          } catch (err) {
+            // Log but don't block — page may have already been removed
+            // from the app or the token may be expired.
+            console.warn(`[meta/config] Could not unsubscribe page ${page.id}:`, err)
+          }
+        }),
+      )
+      const failed = unsubscribeResults.filter((r) => r.status === 'rejected').length
+      if (failed > 0) {
+        console.warn(`[meta/config] ${failed}/${subscribedPages.length} pages could not be unsubscribed from Meta (continuing with DB cleanup)`)
+      }
+    }
+
+    // ── 2. Delete pages (cascade → forms + mappings) ─────────
     const { error: pagesErr } = await admin
       .from('facebook_pages')
       .delete()
       .neq('id', '')
 
     if (pagesErr) {
-      console.error('[meta/config] DELETE pages error:', pagesErr)
+      console.error('[meta/config] DELETE pages error:', pagesErr.message)
+      // Non-fatal — continue to clear config
     }
 
+    // ── 3. Reset facebook_config to disconnected ─────────────
     const { error: configErr } = await admin
       .from('facebook_config')
       .upsert({
@@ -102,6 +132,7 @@ export async function DELETE() {
         fb_user_id: null,
         fb_user_name: null,
         fb_user_email: null,
+        fb_user_picture: null,
         token_expires_at: null,
         status: 'disconnected',
         connected_at: null,
@@ -110,7 +141,7 @@ export async function DELETE() {
       }, { onConflict: 'id' })
 
     if (configErr) {
-      console.error('[meta/config] DELETE config error:', configErr)
+      console.error('[meta/config] DELETE config error:', configErr.message)
       return NextResponse.json({ error: 'Failed to disconnect' }, { status: 500 })
     }
 

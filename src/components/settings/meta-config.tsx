@@ -110,13 +110,22 @@ export function MetaConfig() {
   }
 
   async function handleDisconnect() {
-    if (!confirm('Disconnect Facebook? This will remove all page subscriptions and field mappings.')) return
+    if (!confirm(
+      'Disconnect Facebook?\n\n' +
+      '• All subscribed pages will be unsubscribed from lead webhooks\n' +
+      '• All page connections, forms and field mappings will be removed\n' +
+      '• Lead capture will stop until you reconnect\n\n' +
+      'You can reconnect at any time.'
+    )) return
     setDisconnecting(true)
     try {
       const res = await fetch('/api/meta/config', { method: 'DELETE' })
       if (!res.ok) throw new Error('Failed')
-      toast.success('Facebook disconnected')
+      toast.success('Facebook disconnected — all pages unsubscribed')
       setPages([])
+      // Reset config to disconnected state immediately so the
+      // "Connect Facebook" button shows without waiting for the fetch
+      setConfig((prev) => prev ? { ...prev, connected: false, status: 'disconnected', fb_user_name: null, fb_user_email: null, fb_user_picture: null, token_expires_at: null, page_count: 0 } : null)
       await loadConfig()
     } catch {
       toast.error('Failed to disconnect Facebook')
