@@ -64,7 +64,7 @@ export default async function DeletionStatusPage({
   const { code } = await searchParams
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200">
+    <div className="text-slate-200">
       <div className="mx-auto max-w-lg px-6 py-16">
         <div className="mb-10">
           <Link

@@ -7,21 +7,15 @@ export const metadata: Metadata = {
 }
 
 export default async function TermsPage() {
-  const companyName = 'Support Team'
+  const companyName = 'Tundla CRM'
   const contactEmail = 'support.crm@tundla.com'
-  const lastUpdated = 'May 2025'
+  const lastUpdated = 'June 2026'
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200">
+    <div className="text-slate-200">
       <div className="mx-auto max-w-3xl px-6 py-16">
         <div className="mb-10">
-          <Link
-            href="/"
-            className="text-sm text-slate-500 hover:text-slate-300 transition-colors"
-          >
-            ← Back
-          </Link>
-          <h1 className="mt-4 text-3xl font-bold text-white">Terms &amp; Conditions</h1>
+          <h1 className="text-3xl font-bold text-white">Terms &amp; Conditions</h1>
           <p className="mt-2 text-sm text-slate-400">Last updated: {lastUpdated}</p>
         </div>
 

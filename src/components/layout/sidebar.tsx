@@ -26,6 +26,7 @@ import {
   FileText,
   Package,
 } from 'lucide-react';
+import { LogoMark } from '@/components/public/logo';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -229,12 +230,10 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                 className="h-8 w-8 shrink-0 rounded-lg object-cover bg-slate-800"
               />
             ) : (
-              <div className="bg-primary text-primary-foreground flex h-8 w-8 shrink-0 items-center justify-center rounded-lg">
-                <MessageSquare className="h-4 w-4" />
-              </div>
+              <LogoMark size={32} />
             )}
             <span className="truncate text-sm font-semibold text-white">
-              {company?.name || 'Wulk CRM'}
+              {company?.name || 'Tundla CRM'}
             </span>
           </Link>
           <button

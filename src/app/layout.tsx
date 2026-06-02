@@ -1,29 +1,35 @@
-import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
-import Script from "next/script";
-import { Toaster } from "sonner";
-import "./globals.css";
-import { ThemeProvider } from "@/hooks/use-theme";
-import { DEFAULT_THEME, STORAGE_KEY, THEME_IDS } from "@/lib/themes";
+import type { Metadata, Viewport } from 'next';
+import { Inter } from 'next/font/google';
+import Script from 'next/script';
+import { Toaster } from 'sonner';
+import './globals.css';
+import { ThemeProvider } from '@/hooks/use-theme';
+import { DEFAULT_THEME, STORAGE_KEY, THEME_IDS } from '@/lib/themes';
 
 const inter = Inter({
-  variable: "--font-sans",
-  subsets: ["latin"],
+  variable: '--font-sans',
+  subsets: ['latin'],
 });
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://crm.tundla.com';
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: {
-    default: "wacrm",
-    template: "%s — wacrm",
+    default: 'Tundla CRM — The WhatsApp-first CRM for modern sales teams',
+    template: '%s — Tundla CRM',
   },
-  description: "Self-hostable CRM template for WhatsApp.",
+  description:
+    'Tundla CRM brings your WhatsApp inbox, broadcasts, sales pipelines, and Meta lead capture into one fast, modern workspace.',
+  applicationName: 'Tundla CRM',
+  // Site-wide default is noindex; the public marketing pages override this to
+  // index:true in the (public) route group. Authed app pages stay private.
   robots: {
     index: false,
     follow: false,
   },
-  icons: {
-    icon: [{ url: "/icon" }],
-  },
+  // Icons come from the app-folder file conventions (favicon.ico, icon.png,
+  // apple-icon.png) — Next injects the <link> tags automatically.
   formatDetection: {
     email: false,
     address: false,
@@ -32,8 +38,8 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#020617",
-  colorScheme: "dark",
+  themeColor: '#020617',
+  colorScheme: 'dark',
 };
 
 // Inline boot script — runs before React hydrates so the user's
@@ -78,7 +84,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }}
         />
       </head>
-      <body className="min-h-full bg-background text-foreground font-sans">
+      <body className="bg-background text-foreground min-h-full font-sans">
         <ThemeProvider>
           {children}
           <Toaster
@@ -86,9 +92,9 @@ export default function RootLayout({
             position="top-right"
             toastOptions={{
               style: {
-                background: "rgb(30 41 59)",
-                border: "1px solid rgb(51 65 85)",
-                color: "white",
+                background: 'rgb(30 41 59)',
+                border: '1px solid rgb(51 65 85)',
+                color: 'white',
               },
             }}
           />
