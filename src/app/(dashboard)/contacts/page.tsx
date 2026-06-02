@@ -51,6 +51,7 @@ import {
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
+import { ContactExportButton } from '@/components/contacts/export-button';
 import { useAuth } from '@/hooks/use-auth';
 import { canFilterAssignees } from '@/lib/auth/permissions';
 import { getAssignableProfiles } from '@/lib/auth/assignable-profiles';
@@ -437,6 +438,12 @@ export default function ContactsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <ContactExportButton
+            search={search}
+            assigneeFilter={assigneeFilter}
+            reminderTab={reminderTab}
+            activeFilters={activeFilters}
+          />
           <Button
             variant="outline"
             onClick={() => setImportOpen(true)}

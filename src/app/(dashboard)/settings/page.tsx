@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Settings,
@@ -299,7 +300,12 @@ export default function SettingsPage() {
 
           {showEmail && (
             <TabsContent value="email" className="space-y-6">
-              <GmailConfig />
+              {/* Suspense boundary gives GmailConfig its own useSearchParams
+                  context so its useEffect doesn't cause the parent shell to
+                  suspend or re-render on the OAuth redirect. */}
+              <Suspense fallback={null}>
+                <GmailConfig />
+              </Suspense>
             </TabsContent>
           )}
 

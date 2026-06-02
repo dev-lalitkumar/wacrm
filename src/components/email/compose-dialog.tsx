@@ -368,15 +368,15 @@ export function ComposeEmailDialog({
           <Button
             size="sm"
             onClick={handleSend}
-            disabled={sending || (!gmail.connected && !gmail.loading)}
+            disabled={sending || gmail.loading || !gmail.connected}
             className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
-            {sending ? (
+            {(sending || gmail.loading) ? (
               <Loader2 className="size-3.5 animate-spin" />
             ) : (
               <Send className="size-3.5" />
             )}
-            Send Email
+            {gmail.loading ? 'Connecting…' : 'Send Email'}
           </Button>
         </div>
       </SheetContent>

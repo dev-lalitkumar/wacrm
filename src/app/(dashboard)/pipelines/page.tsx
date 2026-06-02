@@ -27,6 +27,7 @@ import { FIXED_PIPELINE_ID } from "@/lib/pipeline/constants";
 import { useAuth } from "@/hooks/use-auth";
 import { canFilterAssignees } from "@/lib/auth/permissions";
 import { getAssignableProfiles } from "@/lib/auth/assignable-profiles";
+import { DealImportExportToolbar } from "@/components/deals/import-export-toolbar";
 
 type ReminderTab = "today_missed" | "all" | "today" | "missed" | "upcoming";
 interface ReminderCounts { today_missed: number; all: number; today: number; missed: number; upcoming: number; }
@@ -359,6 +360,15 @@ export default function PipelinesPage() {
               <span className="hidden sm:inline">Table</span>
             </button>
           </div>
+          <DealImportExportToolbar
+            filters={{
+              statusTab: 'open',
+              search,
+              assigneeFilter,
+              reminderTab,
+            }}
+            onImported={refreshDeals}
+          />
           <Button
             onClick={() => handleAddDeal()}
             disabled={stages.length === 0}

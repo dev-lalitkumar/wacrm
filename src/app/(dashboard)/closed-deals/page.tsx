@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Deal, PipelineStage, LostReason, Profile } from "@/types";
 import { DealDetailView } from "@/components/pipelines/deal-detail-view";
+import { DealImportExportToolbar } from "@/components/deals/import-export-toolbar";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -282,7 +283,18 @@ export default function ClosedDealsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <h1 className="text-xl font-bold text-white">Closed Deals</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold text-white">Closed Deals</h1>
+        <DealImportExportToolbar
+          filters={{
+            statusTab,
+            search,
+            assigneeFilter,
+            lostReasonFilter,
+          }}
+          exportOnly
+        />
+      </div>
 
       {/* Stats row */}
       <div className="grid grid-cols-2 gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4 sm:grid-cols-3">

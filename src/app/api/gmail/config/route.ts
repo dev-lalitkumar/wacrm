@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, isErrorResponse } from '@/lib/auth/require-role'
+import { decrypt } from '@/lib/encryption'
 
 /**
  * GET /api/gmail/config
@@ -68,7 +69,8 @@ export async function GET() {
 /**
  * DELETE /api/gmail/config
  *
- * Disconnect Gmail — clears all tokens and resets status.
+ * Disconnect Gmail — clears all tokens, resets status, and revokes the
+ * Google OAuth token so it cannot be used after disconnecting.
  * Admin/Owner only.
  */
 export async function DELETE() {
@@ -77,6 +79,13 @@ export async function DELETE() {
     if (isErrorResponse(caller)) return caller
 
     const supabase = await createClient()
+
+    // Read current access token before clearing — needed for revocation.
+    const { data: existing } = await supabase
+      .from('gmail_config')
+      .select('access_token')
+      .eq('id', 1)
+      .maybeSingle()
 
     const { error } = await supabase
       .from('gmail_config')
@@ -99,6 +108,19 @@ export async function DELETE() {
         { error: 'Failed to disconnect Gmail' },
         { status: 500 },
       )
+    }
+
+    // Best-effort token revocation — non-fatal. DB is already cleared.
+    if (existing?.access_token) {
+      try {
+        const rawToken = decrypt(existing.access_token)
+        await fetch(
+          `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(rawToken)}`,
+          { method: 'POST' },
+        )
+      } catch (revokeErr) {
+        console.warn('[gmail/config] token revocation failed (non-fatal):', revokeErr)
+      }
     }
 
     return NextResponse.json({ success: true })

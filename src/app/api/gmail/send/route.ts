@@ -107,29 +107,47 @@ export async function POST(request: NextRequest) {
       // Non-fatal — continue sending
     }
 
-    // Send via Gmail API
-    const result = await sendEmail(tokens.accessToken, {
-      from: tokens.email,
-      to: toEmails,
-      cc,
-      bcc,
-      subject: subject.trim(),
-      bodyText: body_text?.trim(),
-      bodyHtml: body_html?.trim(),
-      threadId: thread_id,
-      inReplyTo: in_reply_to,
-    })
+    let result: Awaited<ReturnType<typeof sendEmail>>
+    try {
+      // Send via Gmail API
+      result = await sendEmail(tokens.accessToken, {
+        from: tokens.email,
+        to: toEmails,
+        cc,
+        bcc,
+        subject: subject.trim(),
+        bodyText: body_text?.trim(),
+        bodyHtml: body_html?.trim(),
+        threadId: thread_id,
+        inReplyTo: in_reply_to,
+      })
+    } catch (sendErr) {
+      // Mark log as failed so it never stays stuck in 'sending'.
+      if (logEntry) {
+        await supabase
+          .from('email_logs')
+          .update({ status: 'failed' })
+          .eq('id', logEntry.id)
+          .then() // fire-and-forget; don't let a log error mask the real error
+      }
+      throw sendErr // re-throw to outer catch → 500 response
+    }
 
-    // Update log entry with success
+    // Update log entry with success — in its own try/catch so a DB hiccup
+    // here doesn't roll back an already-delivered email.
     if (logEntry) {
-      await supabase
-        .from('email_logs')
-        .update({
-          gmail_message_id: result.messageId,
-          gmail_thread_id: result.threadId,
-          status: 'sent',
-        })
-        .eq('id', logEntry.id)
+      try {
+        await supabase
+          .from('email_logs')
+          .update({
+            gmail_message_id: result.messageId,
+            gmail_thread_id: result.threadId,
+            status: 'sent',
+          })
+          .eq('id', logEntry.id)
+      } catch (logUpdateErr) {
+        console.error('[gmail/send] failed to update log to sent:', logUpdateErr)
+      }
     }
 
     // Auto-log a followup if contact_id is provided

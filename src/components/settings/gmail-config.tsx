@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import {
@@ -54,13 +54,22 @@ export function GmailConfig() {
     loadConfig()
   }, [loadConfig])
 
-  // Handle OAuth redirect params
+  // Handle OAuth redirect params — one-shot per unique param value to avoid
+  // double-firing caused by searchParams identity changing twice in Next 16.
+  const handledOAuthParamRef = useRef<string | null>(null)
+
   useEffect(() => {
     const success = searchParams.get('gmail_success')
     const error = searchParams.get('gmail_error')
+    const paramKey = success ?? error ?? null
+    if (!paramKey || handledOAuthParamRef.current === paramKey) return
+    handledOAuthParamRef.current = paramKey
+
     if (success === 'true') {
       toast.success('Gmail connected successfully!')
-      loadConfig()
+      // Delay to allow the OAuth callback DB write to commit before re-fetching.
+      const t = setTimeout(() => { loadConfig() }, 600)
+      return () => clearTimeout(t)
     } else if (error) {
       const messages: Record<string, string> = {
         access_denied: 'You denied access to Gmail',

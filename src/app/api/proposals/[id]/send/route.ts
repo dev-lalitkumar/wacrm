@@ -68,6 +68,20 @@ export async function POST(
         ? interpolate(String(body.subject), vars)
         : `Proposal: ${proposal.title}`
 
+      // Check Gmail connection before attempting to fetch tokens — gives a
+      // clear 400 instead of a cryptic 500 if Gmail isn't set up.
+      const { data: gmailConfig } = await supabase
+        .from('gmail_config')
+        .select('status')
+        .eq('id', 1)
+        .maybeSingle()
+      if (gmailConfig?.status !== 'connected') {
+        return NextResponse.json(
+          { error: 'Gmail is not connected. Connect Gmail in Settings → Email before sending proposals.' },
+          { status: 400 },
+        )
+      }
+
       const tokens = await getGmailTokens(supabase)
 
       // Log first
