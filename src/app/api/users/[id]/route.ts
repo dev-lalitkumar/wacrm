@@ -8,6 +8,119 @@ import {
 
 const VALID_ROLES: Role[] = ['admin', 'owner', 'manager', 'executive']
 
+type Admin = ReturnType<typeof supabaseAdmin>
+
+// Count the customer data a profile currently owns. Used to decide
+// whether deactivation must be accompanied by a data transfer.
+async function countOwnedRecords(
+  admin: Admin,
+  profileId: string,
+): Promise<{ deals: number; contacts: number }> {
+  const [dealsRes, contactsRes] = await Promise.all([
+    admin.from('deals').select('id', { count: 'exact', head: true }).eq('assigned_to', profileId),
+    admin.from('contacts').select('id', { count: 'exact', head: true }).eq('assigned_to', profileId),
+  ])
+  return { deals: dealsRes.count ?? 0, contacts: contactsRes.count ?? 0 }
+}
+
+// Move every deal and contact owned by `fromProfileId` to `toProfileId`.
+// The migration-017 trigger keeps deal↔contact assignment in sync, so
+// updating both tables explicitly is safe and idempotent. Throws on the
+// first failure so the caller can abort before deactivating the user.
+async function reassignOwnedRecords(
+  admin: Admin,
+  fromProfileId: string,
+  toProfileId: string,
+): Promise<void> {
+  const { error: dealErr } = await admin
+    .from('deals')
+    .update({ assigned_to: toProfileId })
+    .eq('assigned_to', fromProfileId)
+  if (dealErr) throw new Error(`Failed to reassign deals: ${dealErr.message}`)
+
+  const { error: contactErr } = await admin
+    .from('contacts')
+    .update({ assigned_to: toProfileId })
+    .eq('assigned_to', fromProfileId)
+  if (contactErr) throw new Error(`Failed to reassign contacts: ${contactErr.message}`)
+}
+
+// Validate a transfer destination and move data onto it. Returns an
+// error response on bad input, or null on success. `from` is the user
+// being deactivated; `reassignTo` is the chosen destination profile id.
+async function transferDataOrError(
+  admin: Admin,
+  from: string,
+  reassignTo: unknown,
+): Promise<NextResponse | null> {
+  const owned = await countOwnedRecords(admin, from)
+  const total = owned.deals + owned.contacts
+
+  if (total === 0) return null // nothing to transfer
+
+  if (typeof reassignTo !== 'string' || !reassignTo) {
+    return NextResponse.json(
+      {
+        error:
+          'This user still owns data. Choose a teammate to transfer it to.',
+        owned,
+      },
+      { status: 400 },
+    )
+  }
+  if (reassignTo === from) {
+    return NextResponse.json(
+      { error: 'Cannot transfer data to the user being deactivated' },
+      { status: 400 },
+    )
+  }
+
+  const { data: dest } = await admin
+    .from('profiles')
+    .select('id, is_active')
+    .eq('id', reassignTo)
+    .maybeSingle()
+
+  if (!dest || !dest.is_active) {
+    return NextResponse.json(
+      { error: 'Transfer destination must be an active team member' },
+      { status: 400 },
+    )
+  }
+
+  await reassignOwnedRecords(admin, from, reassignTo)
+  return null
+}
+
+// ============================================================
+// GET /api/users/[id]
+// Admin / Owner only. Returns how much reassignable data the user
+// owns — used to drive the "transfer data" step before deactivation.
+// ============================================================
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const caller = await requireRole(['admin', 'owner'])
+  if (isErrorResponse(caller)) return caller
+
+  const { id } = await params
+  const admin = supabaseAdmin()
+
+  const { data: target, error: targetErr } = await admin
+    .from('profiles')
+    .select('id')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (targetErr || !target) {
+    return NextResponse.json({ error: 'User not found' }, { status: 404 })
+  }
+
+  const owned = await countOwnedRecords(admin, id)
+  return NextResponse.json({ owned })
+}
+
 // ============================================================
 // PATCH /api/users/[id]
 // Admin / Owner only.
@@ -48,6 +161,8 @@ export async function PATCH(
     full_name?: string
     role?: string
     is_active?: boolean
+    /** Destination profile id for data transfer when deactivating. */
+    reassign_to?: string
   } | null
 
   if (!body) {
@@ -125,6 +240,14 @@ export async function PATCH(
     }
   }
 
+  // Deactivating an active user: their deals/contacts must not be left
+  // stranded on a disabled account. Transfer them first, aborting the
+  // whole operation if the transfer can't be satisfied.
+  if (target.is_active && willBeActive === false) {
+    const transferError = await transferDataOrError(admin, id, body.reassign_to)
+    if (transferError) return transferError
+  }
+
   const { data: updated, error: updateErr } = await admin
     .from('profiles')
     .update(updates)
@@ -150,7 +273,7 @@ export async function PATCH(
 // out of scope (would cascade `user_id` FKs across the schema).
 // ============================================================
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const caller = await requireRole(['admin'])
@@ -158,6 +281,10 @@ export async function DELETE(
 
   const { id } = await params
   const admin = supabaseAdmin()
+
+  const body = (await request.json().catch(() => null)) as {
+    reassign_to?: string
+  } | null
 
   const { data: target, error: targetErr } = await admin
     .from('profiles')
@@ -188,6 +315,12 @@ export async function DELETE(
         { status: 400 },
       )
     }
+  }
+
+  // Transfer owned data off the account before disabling it.
+  if (target.is_active) {
+    const transferError = await transferDataOrError(admin, id, body?.reassign_to)
+    if (transferError) return transferError
   }
 
   const { error: updateErr } = await admin

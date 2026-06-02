@@ -108,6 +108,17 @@ export function TeamManager() {
   const [resetPassword, setResetPassword] = useState('');
   const [resetting, setResetting] = useState(false);
 
+  const [deactivateTarget, setDeactivateTarget] = useState<TeamMember | null>(
+    null,
+  );
+  const [ownedCounts, setOwnedCounts] = useState<{
+    deals: number;
+    contacts: number;
+  } | null>(null);
+  const [loadingCounts, setLoadingCounts] = useState(false);
+  const [reassignTo, setReassignTo] = useState('');
+  const [deactivating, setDeactivating] = useState(false);
+
   const fetchMembers = useCallback(async () => {
     setLoading(true);
     try {
@@ -134,6 +145,13 @@ export function TeamManager() {
   }, [callerRole, fetchMembers]);
 
   const roleOptions = useMemo(() => ROLE_OPTIONS(callerRole), [callerRole]);
+
+  // Eligible transfer destinations: active members other than the one
+  // being deactivated.
+  const transferOptions = useMemo(
+    () => members.filter((m) => m.is_active && m.id !== deactivateTarget?.id),
+    [members, deactivateTarget],
+  );
 
   if (!canManageTeam(callerRole)) {
     return (
@@ -293,6 +311,68 @@ export function TeamManager() {
     setResetPassword(generateTempPassword());
   };
 
+  const openDeactivate = async (member: TeamMember) => {
+    setDeactivateTarget(member);
+    setReassignTo('');
+    setOwnedCounts(null);
+    setLoadingCounts(true);
+    try {
+      const res = await fetch(`/api/users/${member.id}`);
+      const payload = (await res.json().catch(() => ({}))) as {
+        owned?: { deals: number; contacts: number };
+        error?: string;
+      };
+      if (res.ok && payload.owned) {
+        setOwnedCounts(payload.owned);
+      } else {
+        // Fall back to assuming there may be data so we don't silently
+        // deactivate without offering a transfer.
+        setOwnedCounts({ deals: 0, contacts: 0 });
+        if (payload.error) toast.error(payload.error);
+      }
+    } catch {
+      setOwnedCounts({ deals: 0, contacts: 0 });
+    } finally {
+      setLoadingCounts(false);
+    }
+  };
+
+  const handleDeactivateConfirm = async () => {
+    if (!deactivateTarget) return;
+    const total = (ownedCounts?.deals ?? 0) + (ownedCounts?.contacts ?? 0);
+    if (total > 0 && !reassignTo) {
+      toast.error('Choose a teammate to transfer this user’s data to');
+      return;
+    }
+    setDeactivating(true);
+    try {
+      const res = await fetch(`/api/users/${deactivateTarget.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          is_active: false,
+          ...(reassignTo ? { reassign_to: reassignTo } : {}),
+        }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!res.ok) {
+        toast.error(payload.error ?? 'Failed to deactivate user');
+        return;
+      }
+      toast.success(
+        total > 0
+          ? 'User deactivated and their data transferred'
+          : 'User deactivated',
+      );
+      setDeactivateTarget(null);
+      await fetchMembers();
+    } finally {
+      setDeactivating(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <Card className="bg-slate-900/40 border-slate-800">
@@ -410,7 +490,11 @@ export function TeamManager() {
                               size="sm"
                               variant="ghost"
                               disabled={disabled || isSelf || ownerCantTouch}
-                              onClick={() => handleToggleActive(m)}
+                              onClick={() =>
+                                m.is_active
+                                  ? openDeactivate(m)
+                                  : handleToggleActive(m)
+                              }
                               title={
                                 m.is_active ? 'Deactivate' : 'Reactivate'
                               }
@@ -651,6 +735,120 @@ export function TeamManager() {
                 </>
               ) : (
                 'Reset password'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Deactivate + transfer data dialog */}
+      <Dialog
+        open={!!deactivateTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeactivateTarget(null);
+            setReassignTo('');
+            setOwnedCounts(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Deactivate team member</DialogTitle>
+            <DialogDescription>
+              <span className="text-white">
+                {deactivateTarget?.full_name || deactivateTarget?.email}
+              </span>{' '}
+              will no longer be able to sign in. Their deals and contacts
+              must be transferred to another teammate so nothing is left
+              owned by a disabled account.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {loadingCounts ? (
+              <div className="flex items-center gap-2 text-sm text-slate-400">
+                <Loader2 className="size-4 animate-spin" />
+                Checking owned data…
+              </div>
+            ) : ownedCounts &&
+              ownedCounts.deals + ownedCounts.contacts > 0 ? (
+              <>
+                <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-3 text-sm text-slate-300">
+                  This user currently owns{' '}
+                  <span className="font-medium text-white">
+                    {ownedCounts.deals} deal
+                    {ownedCounts.deals === 1 ? '' : 's'}
+                  </span>{' '}
+                  and{' '}
+                  <span className="font-medium text-white">
+                    {ownedCounts.contacts} contact
+                    {ownedCounts.contacts === 1 ? '' : 's'}
+                  </span>
+                  .
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="tm-reassign">Transfer data to</Label>
+                  {transferOptions.length === 0 ? (
+                    <p className="text-xs text-amber-400">
+                      No other active team member is available to receive the
+                      data. Add or reactivate a teammate first.
+                    </p>
+                  ) : (
+                    <select
+                      id="tm-reassign"
+                      value={reassignTo}
+                      onChange={(e) => setReassignTo(e.target.value)}
+                      className="h-9 w-full rounded-lg border border-slate-700 bg-slate-800 px-2.5 text-sm text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                    >
+                      <option value="" disabled>
+                        Select a teammate
+                      </option>
+                      {transferOptions.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {(m.full_name || m.email) +
+                            ` · ${ROLE_LABEL[m.role]}`}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-slate-400">
+                This user owns no deals or contacts. You can deactivate them
+                directly.
+              </p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeactivateTarget(null)}
+              disabled={deactivating}
+              className="border-slate-700"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeactivateConfirm}
+              disabled={
+                deactivating ||
+                loadingCounts ||
+                ((ownedCounts?.deals ?? 0) + (ownedCounts?.contacts ?? 0) >
+                  0 &&
+                  (!reassignTo || transferOptions.length === 0))
+              }
+            >
+              {deactivating ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Deactivating…
+                </>
+              ) : (
+                'Deactivate'
               )}
             </Button>
           </DialogFooter>
