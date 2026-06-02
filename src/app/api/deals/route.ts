@@ -5,6 +5,7 @@ import {
   requireRole,
 } from '@/lib/auth/require-role'
 import { createDeal, type CreateDealInput } from '@/lib/deals/service'
+import { dispatchNotification } from '@/lib/notifications/service'
 
 /**
  * POST /api/deals
@@ -43,6 +44,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   const supabase = await createClient()
 
   try {
+    const assignedTo = body.assigned_to ?? caller.profileId
     const result = await createDeal(supabase, {
       pipeline_id: body.pipeline_id,
       stage_id: body.stage_id,
@@ -53,13 +55,22 @@ export async function POST(request: Request): Promise<NextResponse> {
       currency: body.currency ?? 'USD',
       expected_close_date: body.expected_close_date ?? null,
       notes: body.notes ?? null,
-      assigned_to: body.assigned_to ?? caller.profileId,
+      assigned_to: assignedTo,
       custom_data: body.custom_data ?? {},
       user_id: caller.userId,
       _contactName: body._contactName ?? null,
       _contactPhone: body._contactPhone ?? null,
       _fallbackTitle: body._fallbackTitle,
     })
+
+    // Notify the assignee a deal was created for them (skip self-assignment).
+    if (assignedTo && assignedTo !== caller.profileId) {
+      dispatchNotification({
+        type: 'deal.created',
+        dealId: result.id,
+        assigneeProfileId: assignedTo,
+      }).catch((err) => console.error('[POST /api/deals] notify', err))
+    }
 
     return NextResponse.json({ id: result.id }, { status: 201 })
   } catch (err) {

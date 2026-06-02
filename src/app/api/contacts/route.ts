@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import {
-  getAuthedCaller,
   isErrorResponse,
   requireRole,
 } from '@/lib/auth/require-role'
 import { createContact, type CreateContactInput } from '@/lib/contacts/service'
+import { dispatchNotification } from '@/lib/notifications/service'
 
 /**
  * POST /api/contacts
@@ -38,16 +38,27 @@ export async function POST(request: Request): Promise<NextResponse> {
   const supabase = await createClient()
 
   try {
+    const assignedTo = body.assigned_to ?? caller.profileId
     const result = await createContact(supabase, {
       phone: body.phone,
       name: body.name ?? null,
       email: body.email ?? null,
       company: body.company ?? null,
       source_id: body.source_id,
-      assigned_to: body.assigned_to ?? caller.profileId,
+      assigned_to: assignedTo,
       custom_data: body.custom_data ?? {},
       user_id: caller.userId,
     })
+
+    // Notify the assignee — unless they assigned the contact to themselves.
+    if (assignedTo && assignedTo !== caller.profileId) {
+      dispatchNotification({
+        type: 'contact.assigned',
+        contactId: result.id,
+        assigneeProfileId: assignedTo,
+        assignerProfileId: caller.profileId,
+      }).catch((err) => console.error('[POST /api/contacts] notify', err))
+    }
 
     return NextResponse.json({ id: result.id }, { status: 201 })
   } catch (err) {

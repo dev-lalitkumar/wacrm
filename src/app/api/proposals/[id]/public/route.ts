@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { dispatchNotification } from '@/lib/notifications/service'
+import type { NotificationEvent } from '@/lib/notifications/types'
 
 /**
  * Public (no-auth) endpoint for client-side proposal actions.
@@ -26,7 +28,7 @@ export async function PATCH(
 
   const { data: proposal, error } = await supabase
     .from('proposals')
-    .select('id, status, public_token, viewed_at')
+    .select('id, status, public_token, viewed_at, created_by')
     .eq('id', id)
     .eq('public_token', body.token)
     .single()
@@ -36,16 +38,25 @@ export async function PATCH(
   const now = new Date().toISOString()
   const updates: Record<string, string> = { updated_at: now }
 
-  const proposalData = proposal as { id: string; status: string; public_token: string; viewed_at: string | null }
+  const proposalData = proposal as {
+    id: string; status: string; public_token: string
+    viewed_at: string | null; created_by: string | null
+  }
+  // Whether this action should emit a notification (first view only).
+  let notifyType: 'proposal.viewed' | 'proposal.accepted' | 'proposal.rejected' | null = null
+
   if (body.action === 'viewed' && !proposalData.viewed_at) {
     updates.viewed_at = now
     if (proposalData.status === 'sent') updates.status = 'viewed'
+    notifyType = 'proposal.viewed'
   } else if (body.action === 'accepted') {
     updates.status = 'accepted'
     updates.accepted_at = now
+    notifyType = 'proposal.accepted'
   } else if (body.action === 'rejected') {
     updates.status = 'rejected'
     updates.rejected_at = now
+    notifyType = 'proposal.rejected'
   }
 
   await supabase.from('proposals').update(updates).eq('id', id)
@@ -55,6 +66,17 @@ export async function PATCH(
     action: body.action,
     channel: 'web',
   })
+
+  // Notify the proposal owner of client-side activity.
+  if (notifyType && proposalData.created_by) {
+    dispatchNotification({
+      type: notifyType,
+      proposalId: id,
+      notifyProfileId: proposalData.created_by,
+    } as NotificationEvent).catch((err) =>
+      console.error('[proposals/public] notify', err),
+    )
+  }
 
   return NextResponse.json({ ok: true })
 }

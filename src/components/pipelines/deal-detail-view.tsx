@@ -397,12 +397,13 @@ export function DealDetailView({
     setStatusActing(status);
     const payload: Record<string, unknown> = { status };
     if (status === "won") payload.closed_by = profile?.id ?? null;
-    const { error } = await supabase
-      .from("deals")
-      .update(payload)
-      .eq("id", deal.id);
+    const res = await fetch(`/api/deals/${deal.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
     setStatusActing(null);
-    if (error) {
+    if (!res.ok) {
       toast.error("Failed to update deal status");
       return;
     }
@@ -414,11 +415,19 @@ export function DealDetailView({
   /** Called by MarkLostDialog when the user confirms a reason */
   async function handleConfirmLost(reasonId: string) {
     if (!deal) return;
-    const { error } = await supabase
-      .from("deals")
-      .update({ status: "lost", lost_reason_id: reasonId, closed_by: profile?.id ?? null })
-      .eq("id", deal.id);
-    if (error) throw new Error(error.message);
+    const res = await fetch(`/api/deals/${deal.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: "lost",
+        lost_reason_id: reasonId,
+        closed_by: profile?.id ?? null,
+      }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error ?? "Failed to mark deal as lost");
+    }
     toast.success("Marked as lost");
     fetchAll();
     onSaved();
@@ -431,9 +440,11 @@ export function DealDetailView({
     }
     setSaving(true);
 
-    const { error: dealError } = await supabase
-      .from("deals")
-      .update({
+    // Route through the API so stage/assignment changes emit notifications.
+    const dealRes = await fetch(`/api/deals/${deal.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         title: formTitle.trim(),
         value: parseFloat(formValue) || 0,
         currency: formCurrency,
@@ -443,10 +454,10 @@ export function DealDetailView({
         notes: formNotes.trim() || null,
         // source_id intentionally omitted — immutable after creation (DB trigger 017)
         custom_data: formDealCustomData,
-      })
-      .eq("id", deal.id);
+      }),
+    });
 
-    if (dealError) {
+    if (!dealRes.ok) {
       toast.error("Failed to save deal");
       setSaving(false);
       return;

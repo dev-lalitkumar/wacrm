@@ -4,6 +4,7 @@ import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { decrypt } from '@/lib/encryption'
 import { fetchLeadData } from '@/lib/meta/facebook-api'
 import { processLeadEvent } from '@/lib/meta/lead-processor'
+import { dispatchNotification } from '@/lib/notifications/service'
 import type { LeadgenWebhookPayload } from '@/lib/meta/types'
 
 const FB_LEADS_SOURCE_NAME = 'Facebook Leads'
@@ -183,6 +184,28 @@ async function processOneLead({
     errorMessage: result.errorMessage,
     rawPayload,
   })
+
+  // Notify on a genuinely new contact (not an enrichment of an existing one).
+  if (result.status === 'success' && result.contactId && !result.deduplicated) {
+    const contactId = result.contactId
+    // Visibility broadcast to admins/owners.
+    dispatchNotification({ type: 'contact.created_from_meta', contactId }).catch((err) =>
+      console.error('[meta/webhook] notify created_from_meta', err),
+    )
+    // Direct notification to whoever the contact landed on.
+    const { data: contact } = await admin
+      .from('contacts')
+      .select('assigned_to')
+      .eq('id', contactId)
+      .maybeSingle()
+    if (contact?.assigned_to) {
+      dispatchNotification({
+        type: 'contact.assigned',
+        contactId,
+        assigneeProfileId: contact.assigned_to,
+      }).catch((err) => console.error('[meta/webhook] notify contact.assigned', err))
+    }
+  }
 }
 
 async function getOrCreateFacebookLeadsSource(

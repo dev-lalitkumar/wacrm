@@ -15,6 +15,7 @@ import {
   Mail,
   Share2,
   Phone,
+  Bell,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
@@ -33,6 +34,7 @@ import { CompanyForm } from '@/components/settings/company-form';
 import { GmailConfig } from '@/components/settings/gmail-config';
 import { MetaConfig } from '@/components/settings/meta-config';
 import { CallCenterConfig } from '@/components/settings/call-center-config';
+import { NotificationTemplatesManager } from '@/components/settings/notification-templates-manager';
 import { useAuth } from '@/hooks/use-auth';
 import {
   canManageTeam,
@@ -57,6 +59,7 @@ const TAB_VALUES = [
   'meta',
   'call-center',
   'templates',
+  'notifications',
   'tags',
   'appearance',
 ] as const;
@@ -93,6 +96,7 @@ export default function SettingsPage() {
   const showEmail = profileLoading || canManageEmailConfig(role);
   const showMeta = profileLoading || canManageMetaConfig(role);
   const showCallCenter = profileLoading || canManageCallCenter(role);
+  const showNotifications = profileLoading || canManageCompany(role);
 
   // The URL is the single source of truth for the active tab — no
   // local state, no sync effect. A previous revision duplicated this
@@ -121,6 +125,9 @@ export default function SettingsPage() {
     tab = 'profile';
   }
   if (tab === 'call-center' && !showCallCenter) {
+    tab = 'profile';
+  }
+  if (tab === 'notifications' && !showNotifications) {
     tab = 'profile';
   }
 
@@ -196,6 +203,12 @@ export default function SettingsPage() {
             <MessageSquare className="size-4 shrink-0" />
             Templates
           </TabsTrigger>
+          {showNotifications && (
+            <TabsTrigger value="notifications" className={triggerCls}>
+              <Bell className="size-4 shrink-0" />
+              Notifications
+            </TabsTrigger>
+          )}
 
           <NavSection>Channels</NavSection>
           <TabsTrigger value="whatsapp" className={triggerCls}>
@@ -273,6 +286,12 @@ export default function SettingsPage() {
           <TabsContent value="templates">
             <TemplateManager />
           </TabsContent>
+
+          {showNotifications && (
+            <TabsContent value="notifications">
+              <NotificationTemplatesManager />
+            </TabsContent>
+          )}
 
           <TabsContent value="whatsapp">
             <WhatsAppConfig />

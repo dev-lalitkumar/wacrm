@@ -16,6 +16,7 @@ import type {
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
 import { engineSendText, engineSendTemplate } from './meta-send'
+import { dispatchNotification } from '@/lib/notifications/service'
 
 // ------------------------------------------------------------
 // Public API
@@ -387,10 +388,29 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         agentId = profiles?.[0]?.user_id
       }
       if (!agentId) return 'no agent resolved'
-      await db
+      const { data: assignedConvs } = await db
         .from('conversations')
         .update({ assigned_agent_id: agentId })
         .eq('contact_id', args.contactId)
+        .select('id')
+
+      // Notify the agent. `assigned_agent_id` holds a user_id (auth uid);
+      // resolve it to a profile_id for the notification recipient.
+      const conversationId = assignedConvs?.[0]?.id
+      if (conversationId) {
+        const { data: agentProfile } = await db
+          .from('profiles')
+          .select('id')
+          .eq('user_id', agentId)
+          .maybeSingle()
+        if (agentProfile?.id) {
+          dispatchNotification({
+            type: 'conversation.assigned',
+            conversationId,
+            agentProfileId: agentProfile.id,
+          }).catch((err) => console.error('[automations] notify conversation.assigned', err))
+        }
+      }
       return `assigned to ${agentId}`
     }
 

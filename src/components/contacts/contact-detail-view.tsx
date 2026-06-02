@@ -247,16 +247,17 @@ export function ContactDetailView({
       company: editCompany.trim() || null,
       // source_id intentionally omitted — immutable after creation (DB trigger 017)
       custom_data: editCustomData,
-      updated_at: new Date().toISOString(),
     };
     if (canAssign) updates.assigned_to = editAssignedTo || null;
 
-    const { error: contactError } = await supabase
-      .from('contacts')
-      .update(updates)
-      .eq('id', contactId);
+    // Route through the API so reassignment emits a notification.
+    const contactRes = await fetch(`/api/contacts/${contactId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
 
-    if (contactError) {
+    if (!contactRes.ok) {
       toast.error('Failed to save contact');
       setSaving(false);
       return;
