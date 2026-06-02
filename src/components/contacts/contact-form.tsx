@@ -61,7 +61,7 @@ export function ContactForm({
       setPhone(contact?.phone ?? '');
       setEmail(contact?.email ?? '');
       setCompany(contact?.company ?? '');
-      setAssignedTo(contact?.assigned_to ?? '');
+      setAssignedTo(contact?.assigned_to ?? profile?.id ?? '');
       setSourceId(contact?.source_id ?? null);
       setSelectedTagIds(contactTags.map((ct) => ct.tag_id));
       fetchTags();
@@ -110,6 +110,13 @@ export function ContactForm({
       return;
     }
 
+    // Every contact must have an owner. Roles that can reassign must pick one;
+    // roles that can't fall back to the caller server-side.
+    if (canAssign && !assignedTo) {
+      toast.error('Please assign this contact to someone');
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -128,9 +135,10 @@ export function ContactForm({
         };
         // Only roles that can reassign send `assigned_to`. Sending it
         // unconditionally would let an Executive's edit silently clear
-        // the assignment on submit.
+        // the assignment on submit. The form already guarantees a
+        // non-empty value here, so we never write a null owner.
         if (canAssign) {
-          updates.assigned_to = assignedTo || null;
+          updates.assigned_to = assignedTo;
         }
         const { error } = await supabase
           .from('contacts')
@@ -290,7 +298,7 @@ export function ContactForm({
                 onChange={(e) => setAssignedTo(e.target.value)}
                 className="h-9 w-full rounded-lg border border-slate-700 bg-slate-800 px-2.5 text-sm text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                <option value="">Unassigned</option>
+                <option value="" disabled>Select an assignee</option>
                 {profiles.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.full_name || p.email}

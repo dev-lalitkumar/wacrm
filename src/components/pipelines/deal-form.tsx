@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { MessageSquare, DollarSign } from "lucide-react";
 import { toast } from "sonner";
 import { SourceSelect } from "@/components/shared/source-select";
+import { useAuth } from "@/hooks/use-auth";
 
 interface DealFormProps {
   open: boolean;
@@ -37,6 +38,7 @@ export function DealForm({
   onSaved,
 }: DealFormProps) {
   const supabase = createClient();
+  const { profile } = useAuth();
 
   const [title, setTitle] = useState("");
   const [value, setValue] = useState("");
@@ -64,11 +66,11 @@ export function DealForm({
     setCurrency("USD");
     setContactId("");
     setStageId(defaultStageId || stages[0]?.id || "");
-    setAssignedTo("");
+    setAssignedTo(profile?.id ?? "");
     setExpectedCloseDate("");
     setNotes("");
     setSourceId(null);
-  }, [open, defaultStageId, stages]);
+  }, [open, defaultStageId, stages, profile?.id]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Load supporting data when the sheet opens
@@ -120,6 +122,10 @@ export function DealForm({
     }
     if (!sourceId) {
       toast.error("Source is required");
+      return;
+    }
+    if (!assignedTo) {
+      toast.error("Please assign this deal to someone");
       return;
     }
     setSaving(true);
@@ -271,7 +277,7 @@ export function DealForm({
                 onChange={(e) => setAssignedTo(e.target.value)}
                 className="h-9 w-full rounded-lg border border-slate-700 bg-slate-800 px-2.5 text-sm text-white outline-none focus:border-primary"
               >
-                <option value="">Unassigned</option>
+                <option value="" disabled>Select an assignee</option>
                 {profiles.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.full_name || p.email}
@@ -311,7 +317,7 @@ export function DealForm({
               </Button>
               <Button
                 onClick={handleCreate}
-                disabled={saving || !title.trim() || !contactId || !stageId}
+                disabled={saving || !title.trim() || !contactId || !stageId || !assignedTo}
                 className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {saving ? "Creating…" : "Create Deal"}

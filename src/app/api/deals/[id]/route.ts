@@ -72,6 +72,11 @@ export async function PATCH(
     return NextResponse.json({ error: 'No editable fields provided' }, { status: 400 })
   }
 
+  // Every deal must keep an owner — never let an update clear it.
+  if ('assigned_to' in updates && !updates.assigned_to) {
+    return NextResponse.json({ error: 'assigned_to cannot be empty — a deal must always be assigned' }, { status: 400 })
+  }
+
   // Rescheduling a reminder re-arms the cron.
   if ('reminder_at' in updates && updates.reminder_at !== before.reminder_at) {
     updates.reminder_notified_at = null

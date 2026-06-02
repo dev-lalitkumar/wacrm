@@ -238,6 +238,10 @@ export function ContactDetailView({
       toast.error('Phone is required');
       return;
     }
+    if (canAssign && !editAssignedTo) {
+      toast.error('Please assign this contact to someone');
+      return;
+    }
     setSaving(true);
 
     const updates: Record<string, unknown> = {
@@ -248,7 +252,7 @@ export function ContactDetailView({
       // source_id intentionally omitted — immutable after creation (DB trigger 017)
       custom_data: editCustomData,
     };
-    if (canAssign) updates.assigned_to = editAssignedTo || null;
+    if (canAssign) updates.assigned_to = editAssignedTo;
 
     // Route through the API so reassignment emits a notification.
     const contactRes = await fetch(`/api/contacts/${contactId}`, {
@@ -671,7 +675,7 @@ export function ContactDetailView({
                       onChange={(e) => setEditAssignedTo(e.target.value)}
                       className="h-9 w-full rounded-lg border border-slate-700 bg-slate-800 px-2.5 text-sm text-white outline-none focus:border-primary"
                     >
-                      <option value="">Unassigned</option>
+                      <option value="" disabled>Select an assignee</option>
                       {profiles.map((p) => (
                         <option key={p.id} value={p.id}>{p.full_name || p.email}</option>
                       ))}

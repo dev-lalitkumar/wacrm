@@ -438,6 +438,10 @@ export function DealDetailView({
       toast.error("Title is required");
       return;
     }
+    if (!formAssignedTo) {
+      toast.error("Please assign this deal to someone");
+      return;
+    }
     setSaving(true);
 
     // Route through the API so stage/assignment changes emit notifications.
@@ -449,7 +453,7 @@ export function DealDetailView({
         value: parseFloat(formValue) || 0,
         currency: formCurrency,
         stage_id: formStageId,
-        assigned_to: formAssignedTo || null,
+        assigned_to: formAssignedTo,
         expected_close_date: formCloseDate || null,
         notes: formNotes.trim() || null,
         // source_id intentionally omitted — immutable after creation (DB trigger 017)
@@ -1204,7 +1208,7 @@ export function DealDetailView({
                       onChange={(e) => setFormAssignedTo(e.target.value)}
                       className="h-9 w-full rounded-lg border border-slate-700 bg-slate-800 px-2.5 text-sm text-white outline-none focus:border-primary"
                     >
-                      <option value="">Unassigned</option>
+                      <option value="" disabled>Select an assignee</option>
                       {profiles.map((p) => (
                         <option key={p.id} value={p.id}>{p.full_name || p.email}</option>
                       ))}
