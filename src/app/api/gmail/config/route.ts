@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/admin-client'
 import { requireRole, isErrorResponse } from '@/lib/auth/require-role'
 import { decrypt } from '@/lib/encryption'
+
+// Connection status must always reflect the live DB row — never cache it,
+// or a disconnect can keep reporting "connected" from a stale response.
+export const dynamic = 'force-dynamic'
 
 /**
  * GET /api/gmail/config
@@ -82,16 +87,19 @@ export async function DELETE() {
     const caller = await requireRole(['admin', 'owner'])
     if (isErrorResponse(caller)) return caller
 
-    const supabase = await createClient()
+    // Use the service-role client for the write. Authorization is already
+    // enforced by requireRole above; this bypasses RLS so the disconnect can
+    // never be silently filtered to zero rows (matches the Facebook DELETE).
+    const admin = supabaseAdmin()
 
     // Read current access token before clearing — needed for revocation.
-    const { data: existing } = await supabase
+    const { data: existing } = await admin
       .from('gmail_config')
       .select('access_token')
       .eq('id', 1)
       .maybeSingle()
 
-    const { error } = await supabase
+    const { data: updated, error } = await admin
       .from('gmail_config')
       .update({
         access_token: null,
@@ -107,9 +115,18 @@ export async function DELETE() {
         updated_at: new Date().toISOString(),
       })
       .eq('id', 1)
+      .select('id')
 
     if (error) {
       console.error('[gmail/config] DELETE error:', error)
+      return NextResponse.json(
+        { error: 'Failed to disconnect Gmail' },
+        { status: 500 },
+      )
+    }
+
+    if (!updated || updated.length === 0) {
+      console.error('[gmail/config] DELETE affected 0 rows — config row missing')
       return NextResponse.json(
         { error: 'Failed to disconnect Gmail' },
         { status: 500 },

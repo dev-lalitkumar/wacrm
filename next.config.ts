@@ -107,7 +107,12 @@ const nextConfig: NextConfig = {
         headers: [{ key: "Cache-Control", value: "no-store" }],
       },
       {
-        source: "/:path*",
+        // Everything except /api/* — those are handled by the no-store rule
+        // above. Without this exclusion the catch-all would merge over and
+        // override the API no-store, letting the edge cache per-user API
+        // responses (e.g. Gmail connection status would stay "connected"
+        // for up to s-maxage+SWR after a disconnect).
+        source: "/((?!api/).*)",
         headers: [
           {
             key: "Cache-Control",

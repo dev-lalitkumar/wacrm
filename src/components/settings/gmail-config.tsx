@@ -38,7 +38,7 @@ export function GmailConfig() {
 
   const loadConfig = useCallback(async () => {
     try {
-      const res = await fetch('/api/gmail/config')
+      const res = await fetch('/api/gmail/config', { cache: 'no-store' })
       if (!res.ok) throw new Error('Failed to fetch')
       const data = await res.json()
       setStatus(data.status ?? 'disconnected')
@@ -68,6 +68,15 @@ export function GmailConfig() {
     const paramKey = success ?? error ?? null
     if (!paramKey || handledOAuthParamRef.current === paramKey) return
     handledOAuthParamRef.current = paramKey
+
+    // Strip the one-shot OAuth params from the URL so a later refresh (e.g.
+    // after disconnecting) doesn't replay the success/error toast.
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('gmail_success')
+      url.searchParams.delete('gmail_error')
+      window.history.replaceState({}, '', url.toString())
+    }
 
     if (success === 'true') {
       toast.success('Gmail connected successfully!')
