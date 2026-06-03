@@ -34,8 +34,6 @@ import { UpcomingReminders } from '@/components/main-dashboard/upcoming-reminder
 import { RecentFollowups } from '@/components/main-dashboard/recent-followups'
 import { TeamLeaderboard } from '@/components/main-dashboard/team-leaderboard'
 import { ReminderCounts } from '@/components/main-dashboard/reminder-counts'
-import { EmailNotifications } from '@/components/main-dashboard/email-notifications'
-import { useGmailStatus } from '@/hooks/use-gmail-status'
 
 // ── Date range presets ────────────────────────────────────────────────────
 type DateRange = 'today' | 'this_week' | 'this_month' | 'this_quarter' | 'this_year'
@@ -85,7 +83,6 @@ export default function DashboardPage() {
   const { profile } = useAuth()
   const showTeam = canViewTeamReports(profile?.role)
   const showUserFilter = canFilterAssignees(profile?.role ?? null)
-  const gmail = useGmailStatus()
 
   // ── Date range ─────────────────────────────────────────────
   const [dateRange, setDateRange] = useState<DateRange>('this_month')
@@ -306,9 +303,6 @@ export default function DashboardPage() {
         <UpcomingReminders data={reminders} loading={remindersLoading} />
         <RecentFollowups data={followups} loading={followupsLoading} />
       </div>
-
-      {/* Email Notifications — only when Gmail connected */}
-      <EmailNotifications connected={gmail.connected} />
 
       {/* Team Leaderboard — admin/owner/manager only */}
       {showTeam && (

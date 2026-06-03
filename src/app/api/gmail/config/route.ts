@@ -25,7 +25,7 @@ export async function GET() {
 
     const { data: config, error: configError } = await supabase
       .from('gmail_config')
-      .select('connected_email, status, scopes, connected_at, updated_at')
+      .select('connected_email, connected_name, connected_picture, status, scopes, connected_at, updated_at')
       .eq('id', 1)
       .maybeSingle()
 
@@ -46,6 +46,8 @@ export async function GET() {
         status: config?.status ?? 'disconnected',
         configured,
         connected_email: null,
+        connected_name: null,
+        connected_picture: null,
       })
     }
 
@@ -54,6 +56,8 @@ export async function GET() {
       status: 'connected',
       configured,
       connected_email: config.connected_email,
+      connected_name: config.connected_name,
+      connected_picture: config.connected_picture,
       connected_at: config.connected_at,
       scopes: config.scopes,
     })
@@ -94,6 +98,8 @@ export async function DELETE() {
         refresh_token: null,
         token_expiry: null,
         connected_email: null,
+        connected_name: null,
+        connected_picture: null,
         status: 'disconnected',
         scopes: null,
         connected_at: null,

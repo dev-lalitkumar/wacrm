@@ -12,7 +12,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 // ── Event union ──────────────────────────────────────────────────
 export type NotificationEvent =
   | { type: 'contact.assigned';          contactId: string; assigneeProfileId: string; assignerProfileId?: string | null }
-  | { type: 'contact.created_from_meta'; contactId: string }
+  | { type: 'contact.welcome';           contactId: string }
+  | { type: 'contact.welcome_back';      contactId: string; dealId?: string }
   | { type: 'deal.created';              dealId: string; assigneeProfileId: string }
   | { type: 'deal.assigned';             dealId: string; assigneeProfileId: string; assignerProfileId?: string | null }
   | { type: 'deal.stage_changed';        dealId: string; stageId: string }
@@ -30,7 +31,8 @@ export type NotificationEventType = NotificationEvent['type']
 /** The list of every known event type — used by the templates UI. */
 export const NOTIFICATION_EVENT_TYPES: NotificationEventType[] = [
   'contact.assigned',
-  'contact.created_from_meta',
+  'contact.welcome',
+  'contact.welcome_back',
   'deal.created',
   'deal.assigned',
   'deal.stage_changed',
@@ -47,7 +49,8 @@ export const NOTIFICATION_EVENT_TYPES: NotificationEventType[] = [
 /** Placeholders available per event type — surfaced in the settings UI. */
 export const EVENT_PLACEHOLDERS: Record<NotificationEventType, string[]> = {
   'contact.assigned': ['contact_name', 'contact_phone', 'assignee_name', 'assigner_name'],
-  'contact.created_from_meta': ['contact_name', 'contact_phone', 'contact_email'],
+  'contact.welcome': ['contact_name', 'contact_phone', 'contact_email', 'company'],
+  'contact.welcome_back': ['contact_name', 'deal_title', 'deal_value'],
   'deal.created': ['deal_title', 'contact_name', 'deal_value', 'assignee_name'],
   'deal.assigned': ['deal_title', 'contact_name', 'assignee_name', 'assigner_name'],
   'deal.stage_changed': ['deal_title', 'contact_name', 'stage_name', 'assignee_name'],
@@ -59,6 +62,31 @@ export const EVENT_PLACEHOLDERS: Record<NotificationEventType, string[]> = {
   'proposal.accepted': ['proposal_title', 'contact_name', 'proposal_value'],
   'proposal.rejected': ['proposal_title', 'contact_name'],
   'conversation.assigned': ['contact_name', 'contact_phone', 'agent_name'],
+}
+
+/**
+ * Who each notification is delivered to:
+ *   'user'    — an internal team member (profile-based; in-app/email/whatsapp)
+ *   'contact' — the lead/customer themselves (email/whatsapp only)
+ * Surfaced as a To User / To Contact badge in the settings UI.
+ */
+export type NotificationTarget = 'user' | 'contact'
+
+export const EVENT_TARGETS: Record<NotificationEventType, NotificationTarget> = {
+  'contact.assigned': 'user',
+  'contact.welcome': 'contact',
+  'contact.welcome_back': 'contact',
+  'deal.created': 'user',
+  'deal.assigned': 'user',
+  'deal.stage_changed': 'user',
+  'deal.closed_won': 'user',
+  'deal.closed_lost': 'user',
+  'reminder.due_today': 'user',
+  'reminder.overdue': 'user',
+  'proposal.viewed': 'user',
+  'proposal.accepted': 'user',
+  'proposal.rejected': 'user',
+  'conversation.assigned': 'user',
 }
 
 // ── Records ──────────────────────────────────────────────────────
@@ -94,7 +122,8 @@ export interface NotificationTemplate {
 }
 
 export interface NotificationRecipient {
-  profileId: string
+  /** Null for contact-targeted events (the recipient is the lead, not a profile). */
+  profileId: string | null
   email: string | null
   phone: string | null
 }

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getGmailTokens, sendEmail } from '@/lib/gmail/client'
+import { advanceDealToProposalSent } from '@/lib/deals/service'
+import { dispatchNotification } from '@/lib/notifications/service'
 
 /**
  * POST /api/gmail/send
@@ -57,6 +59,7 @@ export async function POST(request: NextRequest) {
       deal_id,
       thread_id,
       in_reply_to,
+      is_proposal,
     } = body
 
     // Validate required fields
@@ -161,6 +164,20 @@ export async function POST(request: NextRequest) {
       if (deal_id) row.deal_id = deal_id
 
       await supabase.from('followups').insert(row)
+    }
+
+    // Sending a proposal advances the deal to "Proposal Sent" (only if behind).
+    if (is_proposal && deal_id) {
+      try {
+        const { changed, stageId } = await advanceDealToProposalSent(supabase, deal_id)
+        if (changed && stageId) {
+          dispatchNotification({ type: 'deal.stage_changed', dealId: deal_id, stageId })
+            .catch((err) => console.error('[gmail/send] notify stage_changed', err))
+        }
+      } catch (advanceErr) {
+        // Never let a stage-advance failure mask an already-sent email.
+        console.error('[gmail/send] proposal stage advance failed:', advanceErr)
+      }
     }
 
     return NextResponse.json({

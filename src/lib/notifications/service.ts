@@ -113,14 +113,16 @@ async function resolveRecipients(
       return getRecipient(admin, deal.assigned_to)
     }
 
-    case 'contact.created_from_meta': {
-      // Broadcast to all active admins and owners.
-      const { data } = await admin
-        .from('profiles')
-        .select('id, email, phone')
-        .in('role', ['admin', 'owner'])
-        .eq('is_active', true)
-      return (data ?? []).map((p) => ({ profileId: p.id, email: p.email, phone: p.phone }))
+    case 'contact.welcome':
+    case 'contact.welcome_back': {
+      // Sent TO the contact themselves — resolve their email + phone.
+      const { data: contact } = await admin
+        .from('contacts')
+        .select('email, phone')
+        .eq('id', event.contactId)
+        .maybeSingle()
+      if (!contact || (!contact.email && !contact.phone)) return []
+      return [{ profileId: null, email: contact.email, phone: contact.phone }]
     }
 
     default:

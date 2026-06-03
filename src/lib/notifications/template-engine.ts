@@ -48,12 +48,29 @@ export async function buildContext(
       break
     }
 
-    case 'contact.created_from_meta': {
+    case 'contact.welcome': {
       const { data: contact } = await admin
-        .from('contacts').select('name, phone, email').eq('id', event.contactId).single()
-      ctx.contact_name = contact?.name ?? 'Unknown'
+        .from('contacts').select('name, phone, email, company').eq('id', event.contactId).single()
+      ctx.contact_name = contact?.name ?? 'there'
       ctx.contact_phone = contact?.phone ?? ''
       ctx.contact_email = contact?.email ?? ''
+      ctx.company = contact?.company ?? ''
+      break
+    }
+
+    case 'contact.welcome_back': {
+      const { data: contact } = await admin
+        .from('contacts').select('name').eq('id', event.contactId).single()
+      ctx.contact_name = contact?.name ?? 'there'
+      if (event.dealId) {
+        const { data: deal } = await admin
+          .from('deals').select('title, value, currency').eq('id', event.dealId).maybeSingle()
+        ctx.deal_title = deal?.title ?? ''
+        ctx.deal_value = formatMoney(deal?.value, deal?.currency)
+      } else {
+        ctx.deal_title = ''
+        ctx.deal_value = ''
+      }
       break
     }
 
@@ -147,7 +164,8 @@ export async function buildContext(
 export function resolveEntity(event: NotificationEvent): { entityType: EntityType; entityId: string | null } {
   switch (event.type) {
     case 'contact.assigned':
-    case 'contact.created_from_meta':
+    case 'contact.welcome':
+    case 'contact.welcome_back':
       return { entityType: 'contact', entityId: event.contactId }
     case 'deal.created':
     case 'deal.assigned':

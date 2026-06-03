@@ -10,6 +10,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { dispatchNotification } from '@/lib/notifications/service'
 
 export interface CreateDealInput {
   pipeline_id: string
@@ -75,7 +76,9 @@ export function deriveDealTitle(
 export async function createDeal(
   supabase: SupabaseClient,
   data: CreateDealInput,
+  opts: { notify?: boolean } = {},
 ): Promise<CreateDealResult> {
+  const notify = opts.notify ?? true
   if (!data.contact_id) {
     throw new Error('createDeal: contact_id is required — every deal must belong to a contact')
   }
@@ -117,5 +120,70 @@ export async function createDeal(
     throw new Error(`createDeal: insert failed — ${error?.message ?? 'unknown error'}`)
   }
 
+  // "Welcome back" when this is a repeat deal — i.e. the contact already had at
+  // least one deal before this one. Fire-and-forget; bulk paths opt out.
+  if (notify) {
+    const { count } = await supabase
+      .from('deals')
+      .select('id', { count: 'exact', head: true })
+      .eq('contact_id', data.contact_id)
+    if ((count ?? 0) >= 2) {
+      dispatchNotification({
+        type: 'contact.welcome_back',
+        contactId: data.contact_id,
+        dealId: row.id as string,
+      }).catch((err) => console.error('[createDeal] welcome_back notify', err))
+    }
+  }
+
   return { id: row.id as string }
+}
+
+/**
+ * Advance a deal to its pipeline's "Proposal Sent" stage — but only when the
+ * deal is open and currently *behind* that stage. Never moves a deal backwards
+ * (e.g. from Negotiation) and never touches won/lost deals.
+ *
+ * Best-effort and idempotent: returns { changed: false } when there's nothing
+ * to do (no deal, no Proposal Sent stage, already at or past it, or closed).
+ * The stage write is observed by the deal_history trigger automatically.
+ */
+export async function advanceDealToProposalSent(
+  supabase: SupabaseClient,
+  dealId: string,
+): Promise<{ changed: boolean; stageId?: string }> {
+  const { data: deal } = await supabase
+    .from('deals')
+    .select('id, status, stage_id, pipeline_id')
+    .eq('id', dealId)
+    .maybeSingle()
+
+  if (!deal || deal.status !== 'open') return { changed: false }
+
+  // Resolve the target "Proposal Sent" stage in this deal's pipeline.
+  const { data: target } = await supabase
+    .from('pipeline_stages')
+    .select('id, position')
+    .eq('pipeline_id', deal.pipeline_id)
+    .ilike('name', 'Proposal Sent')
+    .maybeSingle()
+
+  if (!target || target.id === deal.stage_id) return { changed: false }
+
+  // Only advance forward — compare positions.
+  const { data: current } = await supabase
+    .from('pipeline_stages')
+    .select('position')
+    .eq('id', deal.stage_id)
+    .maybeSingle()
+
+  if (current && current.position >= target.position) return { changed: false }
+
+  const { error } = await supabase
+    .from('deals')
+    .update({ stage_id: target.id, updated_at: new Date().toISOString() })
+    .eq('id', deal.id)
+
+  if (error) return { changed: false }
+  return { changed: true, stageId: target.id as string }
 }

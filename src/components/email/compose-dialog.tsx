@@ -160,6 +160,7 @@ export function ComposeEmailDialog({
         body_text: useProposal ? buildProposalText() : body.trim(),
         contact_id: contact?.id,
         deal_id: deal?.id,
+        is_proposal: useProposal,
       }
 
       if (useProposal) {

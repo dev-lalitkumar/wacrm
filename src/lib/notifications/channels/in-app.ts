@@ -15,12 +15,15 @@ export class InAppChannel implements NotificationChannel {
   }
 
   async send({ event, recipients, template, context, entityType, entityId }: ChannelSendArgs): Promise<void> {
-    if (!recipients.length) return
+    // In-app notifications are profile-scoped. Contact-targeted events have no
+    // profile recipient, so there's nothing to insert.
+    const profileRecipients = recipients.filter((r) => r.profileId)
+    if (!profileRecipients.length) return
     const admin = supabaseAdmin()
     const title = renderTemplate(template.title, context)
     const body = renderTemplate(template.body, context)
 
-    const rows = recipients.map((r) => ({
+    const rows = profileRecipients.map((r) => ({
       profile_id: r.profileId,
       type: event.type,
       title,

@@ -186,12 +186,10 @@ async function processOneLead({
   })
 
   // Notify on a genuinely new contact (not an enrichment of an existing one).
+  // The customer-facing welcome is dispatched centrally by createContact; here
+  // we only notify the internal assignee.
   if (result.status === 'success' && result.contactId && !result.deduplicated) {
     const contactId = result.contactId
-    // Visibility broadcast to admins/owners.
-    dispatchNotification({ type: 'contact.created_from_meta', contactId }).catch((err) =>
-      console.error('[meta/webhook] notify created_from_meta', err),
-    )
     // Direct notification to whoever the contact landed on.
     const { data: contact } = await admin
       .from('contacts')

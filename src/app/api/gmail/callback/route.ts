@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { encrypt } from '@/lib/encryption'
-import { exchangeCodeForTokens, getGmailProfile } from '@/lib/gmail/client'
+import { exchangeCodeForTokens, getGmailProfile, getGoogleUserInfo } from '@/lib/gmail/client'
 
 /**
  * GET /api/gmail/callback
@@ -81,6 +81,15 @@ export async function GET(request: NextRequest) {
     // Verify the tokens work by fetching the Gmail profile
     const gmailProfile = await getGmailProfile(tokens.accessToken)
 
+    // Fetch the account's display name + picture (best-effort — requires the
+    // userinfo.profile scope; older connections won't have it until reconnect).
+    let userInfo: { name: string | null; picture: string | null } = { name: null, picture: null }
+    try {
+      userInfo = await getGoogleUserInfo(tokens.accessToken)
+    } catch (infoErr) {
+      console.warn('[gmail/callback] userinfo fetch failed (non-fatal):', infoErr)
+    }
+
     // Store everything encrypted
     const tokenExpiry = new Date(Date.now() + tokens.expiresIn * 1000)
 
@@ -91,6 +100,8 @@ export async function GET(request: NextRequest) {
         refresh_token: encrypt(tokens.refreshToken),
         token_expiry: tokenExpiry.toISOString(),
         connected_email: gmailProfile.email,
+        connected_name: userInfo.name,
+        connected_picture: userInfo.picture,
         status: 'connected',
         scopes: tokens.scope.split(' '),
         connected_at: new Date().toISOString(),

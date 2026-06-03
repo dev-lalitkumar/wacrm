@@ -11,6 +11,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
+import { dispatchNotification } from '@/lib/notifications/service'
 
 export interface CreateContactInput {
   /** Raw phone number — normalised by the service. Required. */
@@ -44,7 +45,9 @@ export interface CreateContactResult {
 export async function createContact(
   supabase: SupabaseClient,
   data: CreateContactInput,
+  opts: { notify?: boolean } = {},
 ): Promise<CreateContactResult> {
+  const notify = opts.notify ?? true
   if (!data.source_id) {
     throw new Error('createContact: source_id is required')
   }
@@ -71,6 +74,13 @@ export async function createContact(
 
   if (error || !row) {
     throw new Error(`createContact: insert failed — ${error?.message ?? 'unknown error'}`)
+  }
+
+  // Send a welcome message to the new contact (any source). Fire-and-forget;
+  // bulk/import paths pass { notify: false } to stay silent.
+  if (notify) {
+    dispatchNotification({ type: 'contact.welcome', contactId: row.id as string })
+      .catch((err) => console.error('[createContact] welcome notify', err))
   }
 
   return { id: row.id as string }

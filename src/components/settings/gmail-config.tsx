@@ -32,6 +32,8 @@ export function GmailConfig() {
   const [status, setStatus] = useState<ConnectionStatus>('unknown')
   const [configured, setConfigured] = useState(false)
   const [connectedEmail, setConnectedEmail] = useState<string | null>(null)
+  const [connectedName, setConnectedName] = useState<string | null>(null)
+  const [connectedPicture, setConnectedPicture] = useState<string | null>(null)
   const [connectedAt, setConnectedAt] = useState<string | null>(null)
 
   const loadConfig = useCallback(async () => {
@@ -42,6 +44,8 @@ export function GmailConfig() {
       setStatus(data.status ?? 'disconnected')
       setConfigured(data.configured ?? false)
       setConnectedEmail(data.connected_email ?? null)
+      setConnectedName(data.connected_name ?? null)
+      setConnectedPicture(data.connected_picture ?? null)
       setConnectedAt(data.connected_at ?? null)
     } catch {
       setStatus('unknown')
@@ -130,26 +134,54 @@ export function GmailConfig() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Connection Status */}
+          {/* Connection Status — connected account card */}
           {status === 'connected' && connectedEmail && (
-            <Alert className="border-primary/30 bg-primary/5">
-              <CheckCircle2 className="size-4 text-primary" />
-              <AlertTitle className="text-primary">Connected</AlertTitle>
-              <AlertDescription className="text-slate-300">
-                Sending emails as{' '}
-                <span className="font-semibold text-white">{connectedEmail}</span>
-                {connectedAt && (
-                  <span className="text-slate-500">
-                    {' · connected '}
-                    {new Date(connectedAt).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
-                  </span>
-                )}
-              </AlertDescription>
-            </Alert>
+            <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-4">
+              <div className="flex items-start gap-3">
+                {/* Profile picture */}
+                <div className="shrink-0">
+                  {connectedPicture ? (
+                    <img
+                      src={connectedPicture}
+                      alt={connectedName ?? 'Google profile'}
+                      className="size-12 rounded-full object-cover border-2 border-green-500/30"
+                    />
+                  ) : (
+                    <div className="size-12 rounded-full bg-primary/20 border-2 border-primary/30 flex items-center justify-center">
+                      <Mail className="size-6 text-primary" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Profile info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <CheckCircle2 className="size-4 shrink-0 text-green-400" />
+                    <span className="font-semibold text-white">
+                      {connectedName ?? connectedEmail}
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-400 mt-0.5">{connectedEmail}</p>
+                  {connectedAt && (
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Connected{' '}
+                      {new Date(connectedAt).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-1.5 mt-2 text-xs">
+                    <span className="inline-flex size-2 rounded-full bg-green-400 animate-pulse" />
+                    <span className="text-green-400 font-medium">Connected</span>
+                    <span className="text-slate-500 hidden sm:inline">
+                      — sending emails as this account
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
 
           {status === 'error' && (

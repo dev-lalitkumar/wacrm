@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { isErrorResponse, requireRole } from '@/lib/auth/require-role'
 import { dispatchNotification } from '@/lib/notifications/service'
 import { interpolate } from '@/lib/proposals/template-interpolator'
+import { advanceDealToProposalSent } from '@/lib/deals/service'
 import { getGmailTokens, sendEmail } from '@/lib/gmail/client'
 import { sendTextMessage } from '@/lib/whatsapp/meta-api'
 
@@ -161,37 +162,17 @@ export async function POST(
     recipient,
   })
 
-  // Advance the linked deal to its "Proposal Sent" stage. Best-effort: a
+  // Advance the linked deal to its "Proposal Sent" stage — only if it's open
+  // and currently behind that stage (never moves backwards). Best-effort: a
   // missing deal or stage must never fail the send that already succeeded.
   if (proposal.deal_id) {
-    const { data: deal } = await supabase
-      .from('deals')
-      .select('id, pipeline_id, stage_id')
-      .eq('id', proposal.deal_id)
-      .single()
-
-    if (deal) {
-      const { data: stage } = await supabase
-        .from('pipeline_stages')
-        .select('id')
-        .eq('pipeline_id', deal.pipeline_id)
-        .ilike('name', 'Proposal Sent')
-        .maybeSingle()
-
-      if (stage && stage.id !== deal.stage_id) {
-        const { error: stageError } = await supabase
-          .from('deals')
-          .update({ stage_id: stage.id, updated_at: new Date().toISOString() })
-          .eq('id', deal.id)
-
-        if (!stageError) {
-          dispatchNotification({
-            type: 'deal.stage_changed',
-            dealId: deal.id,
-            stageId: stage.id,
-          }).catch((err) => console.error('[POST /api/proposals/:id/send] notify', err))
-        }
-      }
+    const { changed, stageId } = await advanceDealToProposalSent(supabase, proposal.deal_id)
+    if (changed && stageId) {
+      dispatchNotification({
+        type: 'deal.stage_changed',
+        dealId: proposal.deal_id,
+        stageId,
+      }).catch((err) => console.error('[POST /api/proposals/:id/send] notify', err))
     }
   }
 

@@ -34,7 +34,7 @@ export function getOAuthUrl(redirectUri: string): string {
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly',
+    scope: 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.profile',
     access_type: 'offline',
     prompt: 'consent',
     include_granted_scopes: 'true',
@@ -190,6 +190,29 @@ export async function getGmailProfile(accessToken: string): Promise<GmailUserInf
     email: data.emailAddress,
     messagesTotal: data.messagesTotal,
     threadsTotal: data.threadsTotal,
+  }
+}
+
+/**
+ * Fetch the connected Google account's profile (display name + picture).
+ * Requires the `userinfo.profile` scope. Best-effort — callers should treat
+ * a failure as "name/picture unavailable" rather than fatal.
+ */
+export async function getGoogleUserInfo(
+  accessToken: string,
+): Promise<{ name: string | null; picture: string | null; email: string | null }> {
+  const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Google userinfo fetch failed (${res.status}): ${text}`)
+  }
+  const data = await res.json()
+  return {
+    name: data.name ?? null,
+    picture: data.picture ?? null,
+    email: data.email ?? null,
   }
 }
 

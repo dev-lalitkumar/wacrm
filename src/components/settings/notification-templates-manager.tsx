@@ -10,13 +10,15 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
   EVENT_PLACEHOLDERS,
+  EVENT_TARGETS,
   type NotificationChannelName,
   type NotificationTemplate,
 } from "@/lib/notifications/types";
 
 const EVENT_LABELS: Record<string, string> = {
   "contact.assigned": "Contact assigned",
-  "contact.created_from_meta": "New contact from Facebook",
+  "contact.welcome": "Welcome Message For Contact",
+  "contact.welcome_back": "Welcome Back Message For Contact",
   "deal.created": "Deal created",
   "deal.assigned": "Deal assigned",
   "deal.stage_changed": "Deal stage changed",
@@ -119,8 +121,19 @@ export function NotificationTemplatesManager() {
                 onClick={() => setOpenEvent(isOpen ? null : eventType)}
                 className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-slate-800/40"
               >
-                <span className="text-sm font-medium text-white">
-                  {EVENT_LABELS[eventType] ?? eventType}
+                <span className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-white">
+                    {EVENT_LABELS[eventType] ?? eventType}
+                  </span>
+                  {EVENT_TARGETS[eventType as keyof typeof EVENT_TARGETS] === "contact" ? (
+                    <span className="rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-[10px] font-medium text-green-400">
+                      To Contact
+                    </span>
+                  ) : (
+                    <span className="rounded-full border border-slate-600 bg-slate-700/40 px-2 py-0.5 text-[10px] font-medium text-slate-300">
+                      To User
+                    </span>
+                  )}
                 </span>
                 <ChevronDown
                   className={cn(

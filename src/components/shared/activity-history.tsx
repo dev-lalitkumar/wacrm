@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { timeAgo } from "@/lib/utils";
-import { Loader2, MessageSquare, Phone, Mail, Users, FileText, StickyNote } from "lucide-react";
+import { Loader2, MessageSquare, Phone, Mail, Users, FileText, StickyNote, GitBranch } from "lucide-react";
 
 const CHANNEL_META: Record<string, { label: string; icon: React.ReactNode; cls: string }> = {
   whatsapp: { label: "WhatsApp", icon: <MessageSquare className="size-2.5" />, cls: "bg-green-500/15 text-green-400" },
@@ -18,10 +18,24 @@ interface FollowupEntry {
   created_at: string;
   note: string;
   channel?: string;
-  type: "followup" | "note";
+  type: "followup" | "note" | "history";
   creator?: { full_name?: string; email?: string };
   recording_url?: string | null;
   call_duration?: number | null;
+}
+
+/** Turn a deal_history row into a readable timeline line. */
+function describeHistory(field: string, oldValue: string | null, newValue: string | null): string {
+  if (field === "stage") {
+    return `Stage: ${oldValue || "—"} → ${newValue || "—"}`;
+  }
+  if (field === "status") {
+    if (newValue === "won") return "Deal marked as Won 🎉";
+    if (newValue === "lost") return "Deal marked as Lost";
+    if (newValue === "open") return "Deal reopened";
+    return `Status: ${oldValue || "—"} → ${newValue || "—"}`;
+  }
+  return `${field}: ${oldValue || "—"} → ${newValue || "—"}`;
 }
 
 interface ActivityHistoryProps {
@@ -74,6 +88,28 @@ export function ActivityHistory({ contactId, dealId }: ActivityHistoryProps) {
         }));
       })(),
     ];
+
+    // When viewing a deal, also load its stage/status change history
+    if (dealId) {
+      promises.push(
+        (async (): Promise<FollowupEntry[]> => {
+          const { data } = await supabase
+            .from("deal_history")
+            .select("id, created_at, field, old_value, new_value, changed_by:profiles(full_name, email)")
+            .eq("deal_id", dealId)
+            .order("created_at", { ascending: false })
+            .range(from, to);
+          return (data ?? []).map((r) => ({
+            id: r.id,
+            created_at: r.created_at,
+            note: describeHistory(r.field, r.old_value, r.new_value),
+            channel: undefined,
+            type: "history" as const,
+            creator: r.changed_by as { full_name?: string; email?: string } | undefined,
+          }));
+        })()
+      );
+    }
 
     // When viewing contact-level (no dealId), also load contact notes
     if (!dealId) {
@@ -149,7 +185,10 @@ export function ActivityHistory({ contactId, dealId }: ActivityHistoryProps) {
         const meta = entry.type === "followup" && entry.channel
           ? CHANNEL_META[entry.channel] ?? CHANNEL_META.other
           : null;
-        const creatorName = entry.creator?.full_name || entry.creator?.email || "Unknown";
+        const creatorName =
+          entry.creator?.full_name ||
+          entry.creator?.email ||
+          (entry.type === "history" ? "System" : "Unknown");
         return (
           <div key={entry.id} className="flex gap-3 py-2.5 border-b border-slate-700/40 last:border-0">
             <div className="mt-0.5 shrink-0">
@@ -157,6 +196,11 @@ export function ActivityHistory({ contactId, dealId }: ActivityHistoryProps) {
                 <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${meta.cls}`}>
                   {meta.icon}
                   {meta.label}
+                </span>
+              ) : entry.type === "history" ? (
+                <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-amber-500/15 text-amber-400">
+                  <GitBranch className="size-2.5" />
+                  History
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-slate-700 text-slate-300">
