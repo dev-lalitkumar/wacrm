@@ -25,6 +25,7 @@ import {
   Sparkles,
   AlertCircle,
   CheckCircle2,
+  ExternalLink,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { timeAgo } from '@/lib/utils'
@@ -111,6 +112,13 @@ export function WebhookDetailDialog({
       ? `${window.location.origin}/api/integrations/webhook/${webhookId}`
       : webhookId
         ? `/api/integrations/webhook/${webhookId}`
+        : ''
+
+  const publicFormUrl =
+    typeof window !== 'undefined' && webhookId
+      ? `${window.location.origin}/f/${webhookId}`
+      : webhookId
+        ? `/f/${webhookId}`
         : ''
 
   async function copyToClipboard(text: string, label: string) {
@@ -221,6 +229,40 @@ export function WebhookDetailDialog({
                 </button>
               </div>
             </section>
+
+            {/* ── Public form link (when enabled) ─────────────── */}
+            {webhook?.public_form_enabled && (
+              <section className="space-y-2">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                  Public Form Link
+                </p>
+                <div className="flex items-center gap-2 rounded-md border border-slate-700 bg-slate-800/60 px-3 py-2">
+                  <code className="flex-1 text-xs text-slate-200 font-mono break-all">
+                    {publicFormUrl}
+                  </code>
+                  <a
+                    href={publicFormUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded p-1 text-slate-400 hover:bg-slate-700 hover:text-white cursor-pointer shrink-0"
+                    title="Open form"
+                  >
+                    <ExternalLink className="size-3.5" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(publicFormUrl, 'Form link')}
+                    className="rounded p-1 text-slate-400 hover:bg-slate-700 hover:text-white cursor-pointer shrink-0"
+                    title="Copy form link"
+                  >
+                    <Copy className="size-3.5" />
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Share or embed this link. Submissions create leads (no secret needed).
+                </p>
+              </section>
+            )}
 
             {/* ── Secret ──────────────────────────────────────── */}
             <section className="space-y-2">

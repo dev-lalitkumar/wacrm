@@ -21,6 +21,7 @@ const EDITABLE = [
   'avatar_url',
   'assigned_to',
   'custom_data',
+  'lead_status',
   'reminder_at',
   'reminder_type',
   'reminder_note',

@@ -82,6 +82,34 @@ async function getRecipient(
   return [{ profileId: data.id, email: data.email, phone: data.phone }]
 }
 
+/**
+ * The assignee PLUS every active manager/owner/admin, de-duplicated.
+ * Used for escalation events (SLA breach, overdue reminders) so leadership
+ * sees leads that are slipping — not just the rep. Managers can silence the
+ * email/whatsapp channels per event in Settings → Notifications if it's noisy.
+ */
+async function getRecipientsWithManagers(
+  admin: SupabaseClient,
+  assigneeProfileId: string,
+): Promise<NotificationRecipient[]> {
+  const { data } = await admin
+    .from('profiles')
+    .select('id, email, phone, is_active, role')
+    .eq('is_active', true)
+    .or(`id.eq.${assigneeProfileId},role.in.(admin,owner,manager)`)
+  const rows = (data ?? []) as {
+    id: string; email: string | null; phone: string | null; is_active: boolean
+  }[]
+  const seen = new Set<string>()
+  const recipients: NotificationRecipient[] = []
+  for (const r of rows) {
+    if (seen.has(r.id)) continue
+    seen.add(r.id)
+    recipients.push({ profileId: r.id, email: r.email, phone: r.phone })
+  }
+  return recipients
+}
+
 async function resolveRecipients(
   event: NotificationEvent,
   admin: SupabaseClient,
@@ -93,8 +121,12 @@ async function resolveRecipients(
       return getRecipient(admin, event.assigneeProfileId)
 
     case 'reminder.due_today':
-    case 'reminder.overdue':
       return getRecipient(admin, event.assigneeProfileId)
+
+    // Escalation events: notify the rep AND their managers/owners.
+    case 'reminder.overdue':
+    case 'lead.sla_breached':
+      return getRecipientsWithManagers(admin, event.assigneeProfileId)
 
     case 'proposal.viewed':
     case 'proposal.accepted':
@@ -103,6 +135,9 @@ async function resolveRecipients(
 
     case 'conversation.assigned':
       return getRecipient(admin, event.agentProfileId)
+
+    case 'note.mention':
+      return getRecipient(admin, event.mentionedProfileId)
 
     case 'deal.stage_changed':
     case 'deal.closed_won':

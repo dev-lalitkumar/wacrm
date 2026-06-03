@@ -5,6 +5,7 @@ import {
   isErrorResponse,
   type Role,
 } from '@/lib/auth/require-role'
+import { writeAuditLog } from '@/lib/audit/log'
 
 const VALID_ROLES: Role[] = ['admin', 'owner', 'manager', 'executive']
 
@@ -264,6 +265,26 @@ export async function PATCH(
     )
   }
 
+  // Audit role / activation changes (the sensitive bits).
+  if ('role' in updates || 'is_active' in updates) {
+    const action =
+      'is_active' in updates && updates.is_active === false ? 'user.deactivated'
+      : 'role' in updates ? 'user.role_changed'
+      : 'user.updated'
+    void writeAuditLog({
+      actorProfileId: caller.profileId,
+      actorName: caller.fullName,
+      action,
+      entityType: 'user',
+      entityId: id,
+      detail: {
+        target_name: updated.full_name,
+        before: { role: target.role, is_active: target.is_active },
+        after: { role: updated.role, is_active: updated.is_active },
+      },
+    })
+  }
+
   return NextResponse.json({ user: updated })
 }
 
@@ -331,6 +352,15 @@ export async function DELETE(
   if (updateErr) {
     return NextResponse.json({ error: updateErr.message }, { status: 500 })
   }
+
+  void writeAuditLog({
+    actorProfileId: caller.profileId,
+    actorName: caller.fullName,
+    action: 'user.deactivated',
+    entityType: 'user',
+    entityId: id,
+    detail: { reassigned_to: body?.reassign_to ?? null },
+  })
 
   return NextResponse.json({ ok: true })
 }

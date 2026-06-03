@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { DateRange } from "./report-filters";
-import { Loader2, Users, ChevronUp, ChevronDown, Minus } from "lucide-react";
+import { rowsToCSV, downloadCSV } from "@/lib/export/csv";
+import { Loader2, Users, ChevronUp, ChevronDown, Minus, Download } from "lucide-react";
 
 interface Props {
   visibleIds: string[];
@@ -18,6 +19,9 @@ interface RepRow {
   won: number;
   lost: number;
   convRate: number;
+  revenueWon: number;
+  target: number;
+  attainment: number;
   followups: number;
   onTimeFollowups: number;
   onTimeRate: number;
@@ -30,6 +34,9 @@ const COLUMNS: { key: SortKey; label: string }[] = [
   { key: "won", label: "Won" },
   { key: "lost", label: "Lost" },
   { key: "convRate", label: "Conv. Rate" },
+  { key: "revenueWon", label: "Revenue Won" },
+  { key: "target", label: "Target" },
+  { key: "attainment", label: "Attainment" },
   { key: "followups", label: "Follow-ups" },
   { key: "onTimeFollowups", label: "On-Time FUs" },
   { key: "onTimeRate", label: "On-Time Rate" },
@@ -37,6 +44,20 @@ const COLUMNS: { key: SortKey; label: string }[] = [
 
 function fmtPct(n: number) {
   return `${n}%`;
+}
+
+function fmtMoney(n: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(n);
+}
+
+/** First day of a date's month, as YYYY-MM-01 (for monthly target lookup). */
+function firstOfMonthStr(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
 export function EmployeeReport({ visibleIds, range }: Props) {
@@ -57,14 +78,14 @@ export function EmployeeReport({ visibleIds, range }: Props) {
     const start = range.startDate.toISOString();
     const end = range.endDate.toISOString();
 
-    const [profilesRes, dealsRes, followupsRes] = await Promise.all([
+    const [profilesRes, dealsRes, followupsRes, targetsRes] = await Promise.all([
       supabase
         .from("profiles")
         .select("id, full_name, email, role")
         .in("id", visibleIds),
       supabase
         .from("deals")
-        .select("assigned_to, status")
+        .select("assigned_to, status, value")
         .gte("created_at", start)
         .lte("created_at", end)
         .in("assigned_to", visibleIds),
@@ -74,6 +95,14 @@ export function EmployeeReport({ visibleIds, range }: Props) {
         .gte("created_at", start)
         .lte("created_at", end)
         .in("created_by", visibleIds),
+      // Monthly revenue targets for every month overlapping the range.
+      supabase
+        .from("targets")
+        .select("profile_id, target_value, period_month")
+        .eq("metric", "revenue_won")
+        .gte("period_month", firstOfMonthStr(range.startDate))
+        .lte("period_month", firstOfMonthStr(range.endDate))
+        .in("profile_id", visibleIds),
     ]);
 
     const profiles = (profilesRes.data ?? []) as {
@@ -82,28 +111,37 @@ export function EmployeeReport({ visibleIds, range }: Props) {
       email: string;
       role: string;
     }[];
-    const deals = (dealsRes.data ?? []) as { assigned_to: string; status: string }[];
+    const deals = (dealsRes.data ?? []) as { assigned_to: string; status: string; value: number | null }[];
     const followups = (followupsRes.data ?? []) as unknown as {
       created_by: string;
       created_at: string;
       deal: { reminder_at: string | null } | null;
     }[];
+    const targets = (targetsRes.data ?? []) as { profile_id: string; target_value: number }[];
 
     const repData: Record<string, {
-      totalDeals: number; won: number; lost: number;
+      totalDeals: number; won: number; lost: number; revenueWon: number; target: number;
       followups: number; onTime: number;
     }> = {};
 
     profiles.forEach((p) => {
-      repData[p.id] = { totalDeals: 0, won: 0, lost: 0, followups: 0, onTime: 0 };
+      repData[p.id] = { totalDeals: 0, won: 0, lost: 0, revenueWon: 0, target: 0, followups: 0, onTime: 0 };
     });
 
     deals.forEach((d) => {
       if (d.assigned_to && repData[d.assigned_to]) {
         repData[d.assigned_to].totalDeals++;
-        if (d.status === "won") repData[d.assigned_to].won++;
+        if (d.status === "won") {
+          repData[d.assigned_to].won++;
+          repData[d.assigned_to].revenueWon += Number(d.value ?? 0);
+        }
         if (d.status === "lost") repData[d.assigned_to].lost++;
       }
+    });
+
+    // Sum monthly targets across the selected range per rep.
+    targets.forEach((t) => {
+      if (repData[t.profile_id]) repData[t.profile_id].target += Number(t.target_value ?? 0);
     });
 
     followups.forEach((fu) => {
@@ -118,9 +156,10 @@ export function EmployeeReport({ visibleIds, range }: Props) {
     });
 
     const built: RepRow[] = profiles.map((p) => {
-      const r = repData[p.id] ?? { totalDeals: 0, won: 0, lost: 0, followups: 0, onTime: 0 };
+      const r = repData[p.id] ?? { totalDeals: 0, won: 0, lost: 0, revenueWon: 0, target: 0, followups: 0, onTime: 0 };
       const convRate = r.totalDeals > 0 ? Math.round((r.won / r.totalDeals) * 100) : 0;
       const onTimeRate = r.followups > 0 ? Math.round((r.onTime / r.followups) * 100) : 0;
+      const attainment = r.target > 0 ? Math.round((r.revenueWon / r.target) * 100) : 0;
       return {
         id: p.id,
         name: p.full_name || p.email,
@@ -129,6 +168,9 @@ export function EmployeeReport({ visibleIds, range }: Props) {
         won: r.won,
         lost: r.lost,
         convRate,
+        revenueWon: r.revenueWon,
+        target: r.target,
+        attainment,
         followups: r.followups,
         onTimeFollowups: r.onTime,
         onTimeRate,
@@ -140,6 +182,7 @@ export function EmployeeReport({ visibleIds, range }: Props) {
   }, [visibleIds, range, supabase]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData();
   }, [fetchData]);
 
@@ -156,6 +199,12 @@ export function EmployeeReport({ visibleIds, range }: Props) {
     const diff = (a[sortKey] as number) - (b[sortKey] as number);
     return sortDir === "desc" ? -diff : diff;
   });
+
+  function handleExport() {
+    const cols = ["name", "role", "totalDeals", "won", "lost", "convRate", "revenueWon", "target", "attainment", "followups", "onTimeFollowups", "onTimeRate"];
+    const csv = rowsToCSV(sorted as unknown as Record<string, unknown>[], cols);
+    downloadCSV(`employee-report-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+  }
 
   if (loading) {
     return (
@@ -175,7 +224,17 @@ export function EmployeeReport({ visibleIds, range }: Props) {
   }
 
   return (
-    <div className="rounded-xl border border-slate-700 bg-slate-800/50 overflow-hidden">
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={handleExport}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-400 hover:bg-slate-800 hover:text-slate-200 cursor-pointer"
+        >
+          <Download className="size-3.5" /> Export CSV
+        </button>
+      </div>
+      <div className="rounded-xl border border-slate-700 bg-slate-800/50 overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm min-w-[680px]">
           <thead>
@@ -216,6 +275,17 @@ export function EmployeeReport({ visibleIds, range }: Props) {
                 <td className="px-3 py-3 text-right text-primary font-medium">{row.won}</td>
                 <td className="px-3 py-3 text-right text-red-400 font-medium">{row.lost}</td>
                 <td className="px-3 py-3 text-right text-amber-400 font-medium">{fmtPct(row.convRate)}</td>
+                <td className="px-3 py-3 text-right text-slate-200 font-medium">{fmtMoney(row.revenueWon)}</td>
+                <td className="px-3 py-3 text-right text-slate-400">{row.target > 0 ? fmtMoney(row.target) : "—"}</td>
+                <td className="px-3 py-3 text-right font-medium">
+                  {row.target > 0 ? (
+                    <span className={row.attainment >= 100 ? "text-primary" : row.attainment >= 60 ? "text-amber-400" : "text-red-400"}>
+                      {fmtPct(row.attainment)}
+                    </span>
+                  ) : (
+                    <span className="text-slate-600">—</span>
+                  )}
+                </td>
                 <td className="px-3 py-3 text-right text-slate-200">{row.followups}</td>
                 <td className="px-3 py-3 text-right text-slate-200">{row.onTimeFollowups}</td>
                 <td className="px-3 py-3 text-right text-amber-400 font-medium">{fmtPct(row.onTimeRate)}</td>
@@ -223,6 +293,7 @@ export function EmployeeReport({ visibleIds, range }: Props) {
             ))}
           </tbody>
         </table>
+      </div>
       </div>
     </div>
   );

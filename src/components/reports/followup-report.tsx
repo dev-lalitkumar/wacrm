@@ -13,6 +13,7 @@ import {
   Cell,
 } from "recharts";
 import { Loader2, MessageSquare } from "lucide-react";
+import { FOLLOWUP_OUTCOME_LABELS, type FollowupOutcome } from "@/types";
 
 interface Props {
   visibleIds: string[];
@@ -44,6 +45,7 @@ export function FollowupReport({ visibleIds, range }: Props) {
 
   const [loading, setLoading] = useState(true);
   const [channelData, setChannelData] = useState<{ channel: Channel; count: number }[]>([]);
+  const [outcomeData, setOutcomeData] = useState<{ outcome: FollowupOutcome; count: number }[]>([]);
   const [total, setTotal] = useState(0);
   const [onTime, setOnTime] = useState(0);
 
@@ -61,7 +63,7 @@ export function FollowupReport({ visibleIds, range }: Props) {
 
       const { data: followupsData } = await supabase
         .from("followups")
-        .select("channel, created_at, deal_id, deal:deals(reminder_at)")
+        .select("channel, outcome, created_at, deal_id, deal:deals(reminder_at)")
         .gte("created_at", start)
         .lte("created_at", end)
         .in("created_by", visibleIds);
@@ -69,10 +71,12 @@ export function FollowupReport({ visibleIds, range }: Props) {
       if (cancelled) return;
 
       const counts: Record<string, number> = {};
+      const outcomeCounts: Record<string, number> = {};
       let onTimeCnt = 0;
 
       const allFollowups = (followupsData ?? []) as unknown as Array<{
         channel: string;
+        outcome: string | null;
         created_at: string;
         deal_id: string | null;
         deal: { reminder_at: string | null } | null;
@@ -81,6 +85,7 @@ export function FollowupReport({ visibleIds, range }: Props) {
       allFollowups.forEach((fu) => {
         const ch = fu.channel as Channel;
         counts[ch] = (counts[ch] ?? 0) + 1;
+        if (fu.outcome) outcomeCounts[fu.outcome] = (outcomeCounts[fu.outcome] ?? 0) + 1;
         // On-time: logged before or at reminder_at (only for deal-linked followups)
         if (fu.deal_id && fu.deal?.reminder_at) {
           const loggedAt = new Date(fu.created_at).getTime();
@@ -96,8 +101,14 @@ export function FollowupReport({ visibleIds, range }: Props) {
         count: counts[ch] ?? 0,
       })).filter((d) => d.count > 0);
 
+      const outcomes = (Object.keys(FOLLOWUP_OUTCOME_LABELS) as FollowupOutcome[])
+        .map((o) => ({ outcome: o, count: outcomeCounts[o] ?? 0 }))
+        .filter((d) => d.count > 0)
+        .sort((a, b) => b.count - a.count);
+
       if (!cancelled) {
         setChannelData(data);
+        setOutcomeData(outcomes);
         setTotal(totalCount);
         setOnTime(onTimeCnt);
         setLoading(false);
@@ -219,6 +230,38 @@ export function FollowupReport({ visibleIds, range }: Props) {
           </tbody>
         </table>
       </div>
+
+      {/* Outcome breakdown */}
+      {outcomeData.length > 0 && (
+        <div className="rounded-xl border border-slate-700 bg-slate-800/50 overflow-hidden">
+          <div className="border-b border-slate-700 px-4 py-3">
+            <p className="text-sm font-semibold text-slate-300">Outcomes</p>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-700 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <th className="px-4 py-2.5 text-left">Outcome</th>
+                <th className="px-4 py-2.5 text-right">Count</th>
+                <th className="px-4 py-2.5 text-right">% of Logged Outcomes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(() => {
+                const outcomeTotal = outcomeData.reduce((s, d) => s + d.count, 0);
+                return outcomeData.map((d) => (
+                  <tr key={d.outcome} className="border-b border-slate-700/50 last:border-0">
+                    <td className="px-4 py-2.5 text-slate-200">{FOLLOWUP_OUTCOME_LABELS[d.outcome]}</td>
+                    <td className="px-4 py-2.5 text-right font-medium text-slate-200">{d.count}</td>
+                    <td className="px-4 py-2.5 text-right text-slate-400">
+                      {outcomeTotal > 0 ? Math.round((d.count / outcomeTotal) * 100) : 0}%
+                    </td>
+                  </tr>
+                ));
+              })()}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

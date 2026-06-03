@@ -71,5 +71,44 @@ export async function GET(request: Request) {
   await sweep('deals')
   await sweep('contacts')
 
-  return NextResponse.json({ ok: true, processed })
+  // ── SLA sweep: open leads with no first response past the threshold ──
+  let slaBreaches = 0
+  const { data: sla } = await admin
+    .from('sla_settings')
+    .select('enabled, first_response_minutes')
+    .eq('id', 1)
+    .maybeSingle()
+
+  if (sla?.enabled) {
+    const cutoff = new Date(now.getTime() - (sla.first_response_minutes ?? 15) * 60_000)
+    const { data: breached, error: slaErr } = await admin
+      .from('deals')
+      .select('id, assigned_to')
+      .eq('status', 'open')
+      .is('first_response_at', null)
+      .is('sla_breached_at', null)
+      .not('assigned_to', 'is', null)
+      .lt('created_at', cutoff.toISOString())
+      .limit(200)
+
+    if (slaErr) {
+      console.error('[notifications/cron] sla query failed:', slaErr.message)
+    } else {
+      for (const row of breached ?? []) {
+        await dispatchNotification({
+          type: 'lead.sla_breached',
+          entityType: 'deal',
+          entityId: row.id as string,
+          assigneeProfileId: row.assigned_to as string,
+        })
+        await admin
+          .from('deals')
+          .update({ sla_breached_at: now.toISOString() })
+          .eq('id', row.id)
+        slaBreaches++
+      }
+    }
+  }
+
+  return NextResponse.json({ ok: true, processed, slaBreaches })
 }

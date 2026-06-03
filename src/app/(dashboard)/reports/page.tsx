@@ -10,11 +10,15 @@ import { DealConversionReport } from "@/components/reports/deal-conversion-repor
 import { DealLostReport } from "@/components/reports/deal-lost-report";
 import { FollowupReport } from "@/components/reports/followup-report";
 import { EmployeeReport } from "@/components/reports/employee-report";
+import { ForecastReport } from "@/components/reports/forecast-report";
+import { VelocityReport } from "@/components/reports/velocity-report";
+import { SourceRoiReport } from "@/components/reports/source-roi-report";
+import { ActivityReport } from "@/components/reports/activity-report";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { BarChart2, TrendingUp, XCircle, MessageSquare, Users } from "lucide-react";
+import { BarChart2, TrendingUp, XCircle, MessageSquare, Users, LineChart, Timer, Radio, Activity } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-const TAB_VALUES = ["deal-conversion", "deal-lost", "followup", "employee"] as const;
+const TAB_VALUES = ["deal-conversion", "forecast", "velocity", "source-roi", "deal-lost", "followup", "activity", "employee"] as const;
 type TabValue = (typeof TAB_VALUES)[number];
 
 function isTab(v: string | null): v is TabValue {
@@ -87,6 +91,27 @@ export default function ReportsPage() {
             Deal Conversion
           </TabsTrigger>
           <TabsTrigger
+            value="forecast"
+            className="data-[state=active]:bg-slate-800 data-[state=active]:text-primary text-slate-400"
+          >
+            <LineChart className="size-4" />
+            Forecast
+          </TabsTrigger>
+          <TabsTrigger
+            value="velocity"
+            className="data-[state=active]:bg-slate-800 data-[state=active]:text-primary text-slate-400"
+          >
+            <Timer className="size-4" />
+            Velocity
+          </TabsTrigger>
+          <TabsTrigger
+            value="source-roi"
+            className="data-[state=active]:bg-slate-800 data-[state=active]:text-primary text-slate-400"
+          >
+            <Radio className="size-4" />
+            Source ROI
+          </TabsTrigger>
+          <TabsTrigger
             value="deal-lost"
             className="data-[state=active]:bg-slate-800 data-[state=active]:text-primary text-slate-400"
           >
@@ -99,6 +124,13 @@ export default function ReportsPage() {
           >
             <MessageSquare className="size-4" />
             Follow-up
+          </TabsTrigger>
+          <TabsTrigger
+            value="activity"
+            className="data-[state=active]:bg-slate-800 data-[state=active]:text-primary text-slate-400"
+          >
+            <Activity className="size-4" />
+            Activity
           </TabsTrigger>
           <TabsTrigger
             value="employee"
@@ -119,12 +151,28 @@ export default function ReportsPage() {
               <DealConversionReport visibleIds={visibleIds} range={range} />
             </TabsContent>
 
+            <TabsContent value="forecast" className="mt-4">
+              <ForecastReport visibleIds={visibleIds} range={range} />
+            </TabsContent>
+
+            <TabsContent value="velocity" className="mt-4">
+              <VelocityReport visibleIds={visibleIds} range={range} />
+            </TabsContent>
+
+            <TabsContent value="source-roi" className="mt-4">
+              <SourceRoiReport visibleIds={visibleIds} range={range} />
+            </TabsContent>
+
             <TabsContent value="deal-lost" className="mt-4">
               <DealLostReport visibleIds={visibleIds} range={range} />
             </TabsContent>
 
             <TabsContent value="followup" className="mt-4">
               <FollowupReport visibleIds={visibleIds} range={range} />
+            </TabsContent>
+
+            <TabsContent value="activity" className="mt-4">
+              <ActivityReport visibleIds={visibleIds} range={range} />
             </TabsContent>
 
             <TabsContent value="employee" className="mt-4">

@@ -4,13 +4,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/use-auth';
-import { canAssignContacts } from '@/lib/auth/permissions';
-import type { Contact, Tag, CustomField, Profile } from '@/types';
+import { canAssignContacts, canDeleteContacts } from '@/lib/auth/permissions';
+import type { Contact, Tag, CustomField, Profile, LeadStatus } from '@/types';
+import { LEAD_STATUS_LABELS } from '@/types';
 import { QuickFollowup } from '@/components/shared/quick-followup';
 import { ActivityHistory } from '@/components/shared/activity-history';
 import { ContactInfoCard } from '@/components/shared/contact-info-card';
 import { CollapsibleSection } from '@/components/shared/collapsible-section';
 import { ComposeEmailDialog } from '@/components/email/compose-dialog';
+import { MergeContactDialog } from '@/components/contacts/merge-contact-dialog';
 import { useGmailStatus } from '@/hooks/use-gmail-status';
 import {
   Sheet,
@@ -31,6 +33,7 @@ import {
   Loader2,
   StickyNote,
   Tag as TagIcon,
+  GitMerge,
 } from 'lucide-react';
 import { timeAgo } from '@/lib/utils';
 
@@ -50,8 +53,10 @@ export function ContactDetailView({
   const supabase = createClient();
   const { profile } = useAuth();
   const canAssign = canAssignContacts(profile?.role ?? null);
+  const canMerge = canDeleteContacts(profile?.role ?? null);
   const gmail = useGmailStatus();
   const [emailComposeOpen, setEmailComposeOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
 
   // ─── Loaded data ────────────────────────────────────────────────────────────
   const [contact, setContact] = useState<Contact | null>(null);
@@ -68,6 +73,7 @@ export function ContactDetailView({
   const [editEmail, setEditEmail] = useState('');
   const [editCompany, setEditCompany] = useState('');
   const [editAssignedTo, setEditAssignedTo] = useState('');
+  const [editLeadStatus, setEditLeadStatus] = useState<LeadStatus>('new');
   const [editCustomData, setEditCustomData] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
 
@@ -83,6 +89,7 @@ export function ContactDetailView({
   // ─── Followup-tab: note adding ──────────────────────────────────────────────
   const [newNote, setNewNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
+  const [mentionIds, setMentionIds] = useState<string[]>([]);
 
   // ─── Tags toggling (shared between Followup and Update tabs) ───────────────
   const [savingTags, setSavingTags] = useState(false);
@@ -155,6 +162,7 @@ export function ContactDetailView({
       setEditEmail(c.email ?? '');
       setEditCompany(c.company ?? '');
       setEditAssignedTo(c.assigned_to ?? '');
+      setEditLeadStatus((c.lead_status ?? 'new') as LeadStatus);
       setEditCustomData((c.custom_data ?? {}) as Record<string, unknown>);
     }
 
@@ -208,25 +216,18 @@ export function ContactDetailView({
   async function addNote() {
     if (!contactId || !newNote.trim()) return;
     setSavingNote(true);
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const user = session?.user;
-    if (!user) {
-      toast.error('Not authenticated');
-      setSavingNote(false);
-      return;
-    }
-    const { error } = await supabase.from('contact_notes').insert({
-      contact_id: contactId,
-      user_id: user.id,
-      note_text: newNote.trim(),
+    // Route through the API so @mentions can notify teammates server-side.
+    const res = await fetch(`/api/contacts/${contactId}/note`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note_text: newNote.trim(), mention_profile_ids: mentionIds }),
     });
-    if (error) {
+    if (!res.ok) {
       toast.error('Failed to add note');
     } else {
-      toast.success('Note added');
+      toast.success(mentionIds.length > 0 ? 'Note added & teammate notified' : 'Note added');
       setNewNote('');
+      setMentionIds([]);
       setNoteOpen(false);
       fetchAll();
     }
@@ -249,6 +250,7 @@ export function ContactDetailView({
       phone: editPhone.trim(),
       email: editEmail.trim() || null,
       company: editCompany.trim() || null,
+      lead_status: editLeadStatus,
       // source_id intentionally omitted — immutable after creation (DB trigger 017)
       custom_data: editCustomData,
     };
@@ -565,6 +567,39 @@ export function ContactDetailView({
                       className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 min-h-[72px] text-sm resize-none"
                       autoFocus={noteOpen}
                     />
+
+                    {/* Notify teammates (@mention) */}
+                    {profiles.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-[11px] text-slate-500">Notify teammates</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {profiles
+                            .filter((p) => p.id !== profile?.id)
+                            .map((p) => {
+                              const on = mentionIds.includes(p.id);
+                              return (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  onClick={() =>
+                                    setMentionIds((prev) =>
+                                      on ? prev.filter((x) => x !== p.id) : [...prev, p.id],
+                                    )
+                                  }
+                                  className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition-all cursor-pointer ${
+                                    on
+                                      ? 'bg-primary text-primary-foreground'
+                                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200 border border-slate-700'
+                                  }`}
+                                >
+                                  @{p.full_name || p.email}
+                                </button>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex gap-2">
                       <Button
                         size="sm"
@@ -667,6 +702,19 @@ export function ContactDetailView({
                   />
                 </div>
 
+                <div className="grid gap-2">
+                  <Label className="text-slate-300 text-xs">Lead Status</Label>
+                  <select
+                    value={editLeadStatus}
+                    onChange={(e) => setEditLeadStatus(e.target.value as LeadStatus)}
+                    className="h-9 w-full rounded-lg border border-slate-700 bg-slate-800 px-2.5 text-sm text-white outline-none focus:border-primary"
+                  >
+                    {(Object.keys(LEAD_STATUS_LABELS) as LeadStatus[]).map((s) => (
+                      <option key={s} value={s}>{LEAD_STATUS_LABELS[s]}</option>
+                    ))}
+                  </select>
+                </div>
+
                 {canAssign && (
                   <div className="grid gap-2">
                     <Label className="text-slate-300 text-xs">Assigned To</Label>
@@ -742,6 +790,18 @@ export function ContactDetailView({
                     'Save Changes'
                   )}
                 </Button>
+
+                {/* Merge duplicate — admin/owner/manager only */}
+                {canMerge && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setMergeOpen(true)}
+                    className="w-full border-slate-700 text-slate-300 hover:bg-slate-800"
+                  >
+                    <GitMerge className="size-4" />
+                    Merge a duplicate into this contact
+                  </Button>
+                )}
               </TabsContent>
             </Tabs>
           </div>
@@ -758,6 +818,16 @@ export function ContactDetailView({
             name: contact.name ?? undefined,
             email: contact.email ?? undefined,
           }}
+        />
+      )}
+
+      {/* Merge duplicate dialog */}
+      {contact && canMerge && (
+        <MergeContactDialog
+          open={mergeOpen}
+          onOpenChange={setMergeOpen}
+          survivor={{ id: contact.id, name: contact.name ?? null, phone: contact.phone ?? null, email: contact.email ?? null }}
+          onMerged={() => { onUpdated(); onOpenChange(false); }}
         />
       )}
     </Sheet>

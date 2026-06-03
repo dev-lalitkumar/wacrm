@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { daysAgoStart } from '../dashboard/date-utils'
 import type {
   DashboardMetrics,
+  GoalAttainmentBundle,
   LeaderboardRow,
   RecentFollowup,
   ReminderCountsBundle,
@@ -81,7 +82,7 @@ export async function loadReminderCounts(
 ): Promise<ReminderCountsBundle> {
   let q = db
     .from('deals')
-    .select('reminder_at')
+    .select('reminder_at, first_response_at, sla_breached_at')
     .eq('status', 'open')
     .not('reminder_at', 'is', null)
 
@@ -90,7 +91,11 @@ export async function loadReminderCounts(
   }
 
   const { data } = await q
-  const rows = (data ?? []) as { reminder_at: string }[]
+  const rows = (data ?? []) as {
+    reminder_at: string
+    first_response_at: string | null
+    sla_breached_at: string | null
+  }[]
 
   const now = new Date()
   const todayEnd = new Date()
@@ -99,15 +104,58 @@ export async function loadReminderCounts(
   let today = 0
   let missed = 0
   let upcoming = 0
+  let untouched = 0
 
   for (const r of rows) {
     const dt = new Date(r.reminder_at)
     if (dt < now) missed++
     else if (dt <= todayEnd) today++
     else upcoming++
+    // Breached the first-response SLA and still no response logged.
+    if (r.sla_breached_at && !r.first_response_at) untouched++
   }
 
-  return { today, missed, upcoming }
+  return { today, missed, upcoming, untouched }
+}
+
+// --- 2b. Monthly goal attainment (current month) -------------------------
+
+export async function loadGoalAttainment(
+  db: DB,
+  profileIds?: string[],
+): Promise<GoalAttainmentBundle> {
+  const now = new Date()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+
+  let tq = db
+    .from('targets')
+    .select('target_value')
+    .eq('metric', 'revenue_won')
+    .eq('period_month', periodMonth)
+  if (profileIds && profileIds.length > 0) tq = tq.in('profile_id', profileIds)
+  const { data: tRows } = await tq
+  const target = (tRows ?? []).reduce(
+    (s, r) => s + Number((r as { target_value: number }).target_value ?? 0),
+    0,
+  )
+
+  // Revenue won = deals closed-won within the current month.
+  let dq = db
+    .from('deals')
+    .select('value')
+    .eq('status', 'won')
+    .gte('closed_at', monthStart.toISOString())
+    .lte('closed_at', now.toISOString())
+  if (profileIds && profileIds.length > 0) dq = dq.in('assigned_to', profileIds)
+  const { data: dRows } = await dq
+  const revenueWon = (dRows ?? []).reduce(
+    (s, r) => s + Number((r as { value: number | null }).value ?? 0),
+    0,
+  )
+
+  const attainment = target > 0 ? Math.round((revenueWon / target) * 100) : 0
+  return { target, revenueWon, attainment, hasTarget: target > 0 }
 }
 
 // --- 3. Won vs Lost trend (8 weeks) -------------------------------------

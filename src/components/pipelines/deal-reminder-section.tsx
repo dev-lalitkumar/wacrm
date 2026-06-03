@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { createClient } from "@/lib/supabase/client";
 import type { Deal, DealReminderType } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -61,7 +60,6 @@ interface DealReminderSectionProps {
 }
 
 export function DealReminderSection({ deal, onUpdated }: DealReminderSectionProps) {
-  const supabase = createClient();
   const isOpen = !deal.status || deal.status === "open";
 
   const [type, setType]     = useState<DealReminderType>(deal.reminder_type ?? "followup");
@@ -85,17 +83,24 @@ export function DealReminderSection({ deal, onUpdated }: DealReminderSectionProp
   async function handleSave() {
     if (!at) { toast.error("Please set a date and time"); return; }
     setSaving(true);
-    const { error } = await supabase
-      .from("deals")
-      .update({
-        reminder_type:       type,
-        reminder_at:         new Date(at).toISOString(),
-        reminder_note:       note.trim() || null,
-        reminder_updated_at: new Date().toISOString(),
-      })
-      .eq("id", deal.id);
+    // Route through the deal PATCH API (not a direct client write) so the
+    // server re-arms the reminder cron (clears reminder_notified_at) and the
+    // notification service can observe the change.
+    const res = await fetch(`/api/deals/${deal.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        reminder_type: type,
+        reminder_at:   new Date(at).toISOString(),
+        reminder_note: note.trim() || null,
+      }),
+    });
     setSaving(false);
-    if (error) { toast.error("Failed to save reminder"); return; }
+    if (!res.ok) {
+      const { error } = await res.json().catch(() => ({ error: "" }));
+      toast.error(error || "Failed to save reminder");
+      return;
+    }
     toast.success("Reminder saved");
     onUpdated();
     setDoneMode(false);

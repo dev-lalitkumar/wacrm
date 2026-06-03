@@ -15,6 +15,18 @@ export interface ReminderCountsBundle {
   today: number
   missed: number
   upcoming: number
+  /** Open leads that breached the first-response SLA and still have no response. */
+  untouched: number
+}
+
+export interface GoalAttainmentBundle {
+  /** Summed monthly revenue target for the scoped reps (current month). */
+  target: number
+  /** Won-deal revenue closed in the current month for the scoped reps. */
+  revenueWon: number
+  /** revenueWon ÷ target, as a whole percentage (0 when no target set). */
+  attainment: number
+  hasTarget: boolean
 }
 
 export interface WonLostWeek {

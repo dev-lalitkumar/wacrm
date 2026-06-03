@@ -106,6 +106,7 @@ export function WebhookFormDialog({
   const [name, setName] = useState('')
   const [sourceId, setSourceId] = useState('')
   const [isActive, setIsActive] = useState(true)
+  const [publicForm, setPublicForm] = useState(false)
   /** Flat key→value map. Keys: "contact.<slot>" / "deal.<slot>" / "contact.cf:<uuid>" / "deal.cf:<uuid>". */
   const [mappings, setMappings] = useState<Record<string, string>>({})
   const [rrOverride, setRrOverride] = useState(false)
@@ -296,6 +297,7 @@ export function WebhookFormDialog({
           round_robin_override: rrOverride,
           round_robin_member_ids: rrMembers,
           rate_limit_per_minute: limit,
+          public_form_enabled: publicForm,
         }),
       })
       const body = await res.json()
@@ -372,6 +374,21 @@ export function WebhookFormDialog({
                 className="size-4 rounded border-slate-700 bg-slate-800 text-primary focus:ring-primary"
               />
               <span className="text-sm text-slate-200">Active</span>
+            </label>
+
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={publicForm}
+                onChange={(e) => setPublicForm(e.target.checked)}
+                className="mt-0.5 size-4 rounded border-slate-700 bg-slate-800 text-primary focus:ring-primary"
+              />
+              <span className="text-sm text-slate-200">
+                Enable public web form
+                <span className="block text-xs text-slate-500">
+                  Lets a hosted form submit leads without the secret. Get the link after creating.
+                </span>
+              </span>
             </label>
           </section>
 

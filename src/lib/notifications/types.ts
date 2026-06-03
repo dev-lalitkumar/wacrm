@@ -21,10 +21,12 @@ export type NotificationEvent =
   | { type: 'deal.closed_lost';          dealId: string }
   | { type: 'reminder.due_today';        entityType: 'deal' | 'contact'; entityId: string; assigneeProfileId: string }
   | { type: 'reminder.overdue';          entityType: 'deal' | 'contact'; entityId: string; assigneeProfileId: string }
+  | { type: 'lead.sla_breached';         entityType: 'deal' | 'contact'; entityId: string; assigneeProfileId: string }
   | { type: 'proposal.viewed';           proposalId: string; notifyProfileId: string }
   | { type: 'proposal.accepted';         proposalId: string; notifyProfileId: string }
   | { type: 'proposal.rejected';         proposalId: string; notifyProfileId: string }
   | { type: 'conversation.assigned';     conversationId: string; agentProfileId: string }
+  | { type: 'note.mention';              contactId: string; mentionedProfileId: string; actorProfileId: string; noteText?: string }
 
 export type NotificationEventType = NotificationEvent['type']
 
@@ -40,10 +42,12 @@ export const NOTIFICATION_EVENT_TYPES: NotificationEventType[] = [
   'deal.closed_lost',
   'reminder.due_today',
   'reminder.overdue',
+  'lead.sla_breached',
   'proposal.viewed',
   'proposal.accepted',
   'proposal.rejected',
   'conversation.assigned',
+  'note.mention',
 ]
 
 /** Placeholders available per event type — surfaced in the settings UI. */
@@ -58,10 +62,12 @@ export const EVENT_PLACEHOLDERS: Record<NotificationEventType, string[]> = {
   'deal.closed_lost': ['deal_title', 'contact_name', 'assignee_name'],
   'reminder.due_today': ['entity_name', 'reminder_type', 'reminder_note', 'assignee_name'],
   'reminder.overdue': ['entity_name', 'reminder_type', 'reminder_note', 'days_overdue', 'assignee_name'],
+  'lead.sla_breached': ['entity_name', 'minutes_waiting', 'assignee_name'],
   'proposal.viewed': ['proposal_title', 'contact_name', 'proposal_value'],
   'proposal.accepted': ['proposal_title', 'contact_name', 'proposal_value'],
   'proposal.rejected': ['proposal_title', 'contact_name'],
   'conversation.assigned': ['contact_name', 'contact_phone', 'agent_name'],
+  'note.mention': ['contact_name', 'mentioner_name', 'note_excerpt'],
 }
 
 /**
@@ -83,10 +89,12 @@ export const EVENT_TARGETS: Record<NotificationEventType, NotificationTarget> = 
   'deal.closed_lost': 'user',
   'reminder.due_today': 'user',
   'reminder.overdue': 'user',
+  'lead.sla_breached': 'user',
   'proposal.viewed': 'user',
   'proposal.accepted': 'user',
   'proposal.rejected': 'user',
   'conversation.assigned': 'user',
+  'note.mention': 'user',
 }
 
 // ── Records ──────────────────────────────────────────────────────

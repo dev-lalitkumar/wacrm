@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import type { Contact, Tag, ContactTag, CustomField, Profile } from '@/types';
+import type { Contact, Tag, ContactTag, CustomField, Profile, LeadStatus } from '@/types';
+import { LEAD_STATUS_LABELS, LEAD_STATUS_STYLES } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -52,14 +53,15 @@ import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
 import { ContactExportButton } from '@/components/contacts/export-button';
+import { SavedViews } from '@/components/contacts/saved-views';
 import { useAuth } from '@/hooks/use-auth';
-import { canFilterAssignees } from '@/lib/auth/permissions';
+import { canFilterAssignees, canDeleteContacts } from '@/lib/auth/permissions';
 import { getAssignableProfiles } from '@/lib/auth/assignable-profiles';
 
 const PAGE_SIZE = 25;
 
-type ReminderTab = 'today_missed' | 'all' | 'today' | 'missed' | 'upcoming';
-interface ReminderCounts { today_missed: number; all: number; today: number; missed: number; upcoming: number; }
+type ReminderTab = 'today_missed' | 'untouched' | 'all' | 'today' | 'missed' | 'upcoming';
+interface ReminderCounts { today_missed: number; untouched: number; all: number; today: number; missed: number; upcoming: number; }
 
 interface ContactWithTags extends Contact {
   tags?: Tag[];
@@ -69,6 +71,10 @@ export default function ContactsPage() {
   const supabase = createClient();
   const { profile } = useAuth();
   const showAssigneeFilter = canFilterAssignees(profile?.role ?? null);
+  const canBulk = canDeleteContacts(profile?.role ?? null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkActing, setBulkActing] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<LeadStatus | ''>('');
 
   const [assignableProfiles, setAssignableProfiles] = useState<Profile[]>([]);
   const [assigneeFilter, setAssigneeFilter] = useState<string[]>([]);
@@ -79,7 +85,7 @@ export default function ContactsPage() {
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [reminderTab, setReminderTab] = useState<ReminderTab>('today_missed');
-  const [reminderCounts, setReminderCounts] = useState<ReminderCounts>({ today_missed: 0, all: 0, today: 0, missed: 0, upcoming: 0 });
+  const [reminderCounts, setReminderCounts] = useState<ReminderCounts>({ today_missed: 0, untouched: 0, all: 0, today: 0, missed: 0, upcoming: 0 });
   const [customTextFields, setCustomTextFields] = useState<CustomField[]>([]);
   const [filterFields, setFilterFields] = useState<CustomField[]>([]);
   const [activeFilters, setActiveFilters] = useState<Record<string, string[]>>({});
@@ -148,7 +154,7 @@ export default function ContactsPage() {
     const todayEndISO = todayEnd.toISOString();
 
     // Fetch deal contact IDs for each bucket first, then count distinct contacts
-    const [allRes, todayDeals, missedDeals, upcomingDeals] = await Promise.all([
+    const [allRes, todayDeals, missedDeals, upcomingDeals, untouchedDeals] = await Promise.all([
       supabase.from('contacts').select('id', { count: 'exact', head: true }),
       supabase.from('deals').select('contact_id').eq('status', 'open').not('contact_id', 'is', null)
         .gte('reminder_at', now).lte('reminder_at', todayEndISO),
@@ -156,6 +162,8 @@ export default function ContactsPage() {
         .lt('reminder_at', now),
       supabase.from('deals').select('contact_id').eq('status', 'open').not('contact_id', 'is', null)
         .gt('reminder_at', todayEndISO),
+      supabase.from('deals').select('contact_id').eq('status', 'open').not('contact_id', 'is', null)
+        .is('first_response_at', null),
     ]);
 
     const uniq = (rows: { contact_id: string | null }[]) =>
@@ -165,6 +173,7 @@ export default function ContactsPage() {
     const missedCount = uniq(missedDeals.data ?? []);
     setReminderCounts({
       today_missed: todayCount + missedCount,
+      untouched: uniq(untouchedDeals.data ?? []),
       all: allRes.count ?? 0,
       today: todayCount,
       missed: missedCount,
@@ -194,6 +203,8 @@ export default function ContactsPage() {
       else if (reminderTab === 'today')    dealQuery = dealQuery.gte('reminder_at', now).lte('reminder_at', todayEndISO);
       else if (reminderTab === 'missed')   dealQuery = dealQuery.lt('reminder_at', now);
       else if (reminderTab === 'upcoming') dealQuery = dealQuery.gt('reminder_at', todayEndISO);
+      // Intake queue — open deals the rep hasn't responded to yet.
+      else if (reminderTab === 'untouched') dealQuery = dealQuery.is('first_response_at', null);
       const { data: dealRows } = await dealQuery;
       const contactIds = [...new Set((dealRows ?? []).map((r) => r.contact_id).filter(Boolean) as string[])];
       if (contactIds.length === 0) {
@@ -219,6 +230,11 @@ export default function ContactsPage() {
     // Assignee multi-select filter (server-side)
     if (assigneeFilter.length > 0) {
       query = query.in('assigned_to', assigneeFilter);
+    }
+
+    // Lead status filter
+    if (statusFilter) {
+      query = query.eq('lead_status', statusFilter);
     }
 
     // Apply custom field filters
@@ -289,7 +305,7 @@ export default function ContactsPage() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, tagsMap, reminderTab, customTextFields, filterFields, activeFilters, assigneeFilter]);
+  }, [supabase, page, search, tagsMap, reminderTab, customTextFields, filterFields, activeFilters, assigneeFilter, statusFilter]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
@@ -396,6 +412,63 @@ export default function ContactsPage() {
     setDeleteTarget(null);
   }
 
+  // ─── Bulk selection + actions ────────────────────────────────────────────────
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function toggleSelectAll() {
+    setSelectedIds((prev) => {
+      const allOnPage = contacts.map((c) => c.id);
+      const allSelected = allOnPage.every((id) => prev.has(id)) && allOnPage.length > 0;
+      return allSelected ? new Set() : new Set(allOnPage);
+    });
+  }
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  async function bulkAssign(profileId: string) {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setBulkActing(true);
+    const { error } = await supabase.from('contacts').update({ assigned_to: profileId }).in('id', ids);
+    setBulkActing(false);
+    if (error) { toast.error('Failed to reassign'); return; }
+    toast.success(`Reassigned ${ids.length} contact${ids.length === 1 ? '' : 's'}`);
+    clearSelection();
+    fetchContacts();
+  }
+
+  async function bulkAddTag(tagId: string) {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setBulkActing(true);
+    const rows = ids.map((contact_id) => ({ contact_id, tag_id: tagId }));
+    // Ignore rows that already have the tag (unique contact_id+tag_id).
+    const { error } = await supabase.from('contact_tags').upsert(rows, { onConflict: 'contact_id,tag_id', ignoreDuplicates: true });
+    setBulkActing(false);
+    if (error) { toast.error('Failed to add tag'); return; }
+    toast.success(`Tagged ${ids.length} contact${ids.length === 1 ? '' : 's'}`);
+    clearSelection();
+    fetchContacts();
+  }
+
+  async function bulkDelete() {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setBulkActing(true);
+    const { error } = await supabase.from('contacts').delete().in('id', ids);
+    setBulkActing(false);
+    if (error) { toast.error('Failed to delete'); return; }
+    toast.success(`Deleted ${ids.length} contact${ids.length === 1 ? '' : 's'}`);
+    clearSelection();
+    fetchContacts();
+  }
+
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
   const hasNext = page < totalPages - 1;
   const hasPrev = page > 0;
@@ -465,8 +538,8 @@ export default function ContactsPage() {
       {/* Reminder tabs + search row */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900 p-0.5">
-          {(['today_missed','all','today','missed','upcoming'] as ReminderTab[]).map((t) => {
-            const label = t === 'today_missed' ? 'Today+Missed' : t.charAt(0).toUpperCase() + t.slice(1);
+          {(['today_missed','untouched','all','today','missed','upcoming'] as ReminderTab[]).map((t) => {
+            const label = t === 'today_missed' ? 'Today+Missed' : t === 'untouched' ? 'New Leads' : t.charAt(0).toUpperCase() + t.slice(1);
             return (
               <button
                 key={t}
@@ -501,6 +574,32 @@ export default function ContactsPage() {
             className="pl-8 bg-slate-900 border-slate-700 text-white placeholder:text-slate-500"
           />
         </div>
+
+        {/* Lead status filter */}
+        <select
+          value={statusFilter}
+          onChange={(e) => { setStatusFilter(e.target.value as LeadStatus | ''); setPage(0); }}
+          className="h-9 rounded-lg border border-slate-700 bg-slate-900 px-2.5 text-xs text-white outline-none focus:border-primary"
+        >
+          <option value="">All statuses</option>
+          {(Object.keys(LEAD_STATUS_LABELS) as LeadStatus[]).map((s) => (
+            <option key={s} value={s}>{LEAD_STATUS_LABELS[s]}</option>
+          ))}
+        </select>
+
+        {/* Saved views / segments */}
+        <SavedViews
+          scope="contacts"
+          currentFilters={{ search, assigneeFilter, statusFilter, reminderTab, activeFilters }}
+          onApply={(f) => {
+            setSearch((f.search as string) ?? '');
+            setAssigneeFilter((f.assigneeFilter as string[]) ?? []);
+            setStatusFilter((f.statusFilter as LeadStatus | '') ?? '');
+            setReminderTab((f.reminderTab as ReminderTab) ?? 'all');
+            setActiveFilters((f.activeFilters as Record<string, string[]>) ?? {});
+            setPage(0);
+          }}
+        />
 
         {(filterFields.length > 0 || (showAssigneeFilter && assignableProfiles.length > 0)) && (
           <Popover>
@@ -682,11 +781,93 @@ export default function ContactsPage() {
         </div>
       )}
 
+      {/* Bulk action bar */}
+      {canBulk && selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2">
+          <span className="text-sm font-medium text-slate-200">
+            {selectedIds.size} selected
+          </span>
+          <div className="flex-1" />
+
+          {/* Assign to */}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              disabled={bulkActing}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-700 bg-transparent px-2.5 text-xs font-medium text-slate-300 hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+            >
+              <Users className="size-3.5" /> Assign to
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="bg-slate-900 border-slate-700 text-slate-200 max-h-64 overflow-y-auto">
+              {assignableProfiles.length === 0 ? (
+                <DropdownMenuItem disabled>No users</DropdownMenuItem>
+              ) : (
+                assignableProfiles.map((p) => (
+                  <DropdownMenuItem key={p.id} onClick={() => bulkAssign(p.id)} className="cursor-pointer">
+                    {p.full_name || p.email}
+                  </DropdownMenuItem>
+                ))
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Add tag */}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              disabled={bulkActing}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-700 bg-transparent px-2.5 text-xs font-medium text-slate-300 hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+            >
+              <Plus className="size-3.5" /> Add tag
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="bg-slate-900 border-slate-700 text-slate-200 max-h-64 overflow-y-auto">
+              {Object.values(tagsMap).length === 0 ? (
+                <DropdownMenuItem disabled>No tags</DropdownMenuItem>
+              ) : (
+                Object.values(tagsMap).map((t) => (
+                  <DropdownMenuItem key={t.id} onClick={() => bulkAddTag(t.id)} className="cursor-pointer">
+                    <span className="inline-block size-2.5 rounded-full mr-2" style={{ backgroundColor: t.color }} />
+                    {t.name}
+                  </DropdownMenuItem>
+                ))
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={bulkActing}
+            onClick={bulkDelete}
+            className="border-red-500/40 text-red-400 hover:bg-red-500/10"
+          >
+            {bulkActing ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />} Delete
+          </Button>
+          <button
+            type="button"
+            onClick={clearSelection}
+            className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 cursor-pointer"
+            aria-label="Clear selection"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="rounded-lg border border-slate-800 overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="border-slate-800 hover:bg-transparent">
+              {canBulk && (
+                <TableHead className="w-8">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all on page"
+                    className="size-3.5 accent-primary cursor-pointer align-middle"
+                    checked={contacts.length > 0 && contacts.every((c) => selectedIds.has(c.id))}
+                    onChange={toggleSelectAll}
+                  />
+                </TableHead>
+              )}
               <TableHead className="text-slate-400">Name</TableHead>
               <TableHead className="text-slate-400">Phone</TableHead>
               <TableHead className="text-slate-400 hidden md:table-cell">Email</TableHead>
@@ -700,7 +881,7 @@ export default function ContactsPage() {
           <TableBody>
             {loading ? (
               <TableRow className="border-slate-800">
-                <TableCell colSpan={8} className="text-center py-12">
+                <TableCell colSpan={canBulk ? 9 : 8} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Loader2 className="size-6 animate-spin text-primary" />
                     <p className="text-sm text-slate-500">Loading contacts...</p>
@@ -709,7 +890,7 @@ export default function ContactsPage() {
               </TableRow>
             ) : contacts.length === 0 ? (
               <TableRow className="border-slate-800">
-                <TableCell colSpan={8} className="text-center py-12">
+                <TableCell colSpan={canBulk ? 9 : 8} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Users className="size-8 text-slate-600" />
                     <p className="text-sm text-slate-500">
@@ -736,12 +917,30 @@ export default function ContactsPage() {
                   className="border-slate-800 hover:bg-slate-900/50 cursor-pointer"
                   onClick={() => openDetail(contact.id)}
                 >
+                  {canBulk && (
+                    <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        aria-label="Select contact"
+                        className="size-3.5 accent-primary cursor-pointer align-middle"
+                        checked={selectedIds.has(contact.id)}
+                        onChange={() => toggleSelect(contact.id)}
+                      />
+                    </TableCell>
+                  )}
                   {/* Rich Name cell — name + company (muted) + tag chips + top-2 custom fields */}
                   <TableCell className="py-2.5">
                     <div className="space-y-0.5">
-                      <p className="text-white font-semibold text-sm leading-snug">
-                        {contact.name || <span className="text-slate-500 italic font-normal">Unnamed</span>}
-                      </p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-white font-semibold text-sm leading-snug">
+                          {contact.name || <span className="text-slate-500 italic font-normal">Unnamed</span>}
+                        </p>
+                        {contact.lead_status && contact.lead_status !== 'new' && (
+                          <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-medium ${LEAD_STATUS_STYLES[contact.lead_status]}`}>
+                            {LEAD_STATUS_LABELS[contact.lead_status]}
+                          </span>
+                        )}
+                      </div>
                       {contact.company && (
                         <p className="text-xs text-slate-500 truncate max-w-[200px]">{contact.company}</p>
                       )}
@@ -892,7 +1091,7 @@ export default function ContactsPage() {
               variant="outline"
               size="icon-sm"
               disabled={!hasPrev}
-              onClick={() => setPage((p) => p - 1)}
+              onClick={() => { clearSelection(); setPage((p) => p - 1); }}
               className="border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-30"
             >
               <ChevronLeft className="size-4" />
@@ -904,7 +1103,7 @@ export default function ContactsPage() {
               variant="outline"
               size="icon-sm"
               disabled={!hasNext}
-              onClick={() => setPage((p) => p + 1)}
+              onClick={() => { clearSelection(); setPage((p) => p + 1); }}
               className="border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-30"
             >
               <ChevronRight className="size-4" />

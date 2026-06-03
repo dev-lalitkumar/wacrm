@@ -77,6 +77,18 @@ export async function PATCH(
     return NextResponse.json({ error: 'assigned_to cannot be empty — a deal must always be assigned' }, { status: 400 })
   }
 
+  // A lead must never go dark: an open deal must always keep a future reminder.
+  // The only way to resolve a reminder is to schedule the next one. (The DB has a
+  // backstop trigger; this gives the client a friendly message first.) Clearing is
+  // allowed only when the deal is being closed in the same update (won/lost).
+  const resultingStatus = ('status' in updates ? updates.status : before.status) as string
+  if ('reminder_at' in updates && !updates.reminder_at && resultingStatus === 'open') {
+    return NextResponse.json(
+      { error: 'Open deals must keep a reminder — schedule the next step before clearing the current one' },
+      { status: 400 },
+    )
+  }
+
   // Rescheduling a reminder re-arms the cron.
   if ('reminder_at' in updates && updates.reminder_at !== before.reminder_at) {
     updates.reminder_notified_at = null

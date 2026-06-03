@@ -17,13 +17,14 @@ import {
 import {
   loadDashboardMetrics,
   loadReminderCounts,
+  loadGoalAttainment,
   loadWonLostTrend,
   loadUpcomingReminders,
   loadRecentFollowups,
   loadTeamLeaderboard,
 } from '@/lib/main-dashboard/queries'
 import { loadPipelineDonut } from '@/lib/dashboard/queries'
-import type { DashboardMetrics, WonLostWeek, UpcomingReminder, RecentFollowup, LeaderboardRow, ReminderCountsBundle } from '@/lib/main-dashboard/types'
+import type { DashboardMetrics, WonLostWeek, UpcomingReminder, RecentFollowup, LeaderboardRow, ReminderCountsBundle, GoalAttainmentBundle } from '@/lib/main-dashboard/types'
 import type { PipelineDonutData } from '@/lib/dashboard/types'
 
 import { MetricCard } from '@/components/dashboard/metric-card'
@@ -34,6 +35,7 @@ import { UpcomingReminders } from '@/components/main-dashboard/upcoming-reminder
 import { RecentFollowups } from '@/components/main-dashboard/recent-followups'
 import { TeamLeaderboard } from '@/components/main-dashboard/team-leaderboard'
 import { ReminderCounts } from '@/components/main-dashboard/reminder-counts'
+import { GoalAttainment } from '@/components/main-dashboard/goal-attainment'
 
 // ── Date range presets ────────────────────────────────────────────────────
 type DateRange = 'today' | 'this_week' | 'this_month' | 'this_quarter' | 'this_year'
@@ -106,6 +108,9 @@ export default function DashboardPage() {
   const [reminderCountsData, setReminderCountsData] = useState<ReminderCountsBundle | null>(null)
   const [reminderCountsLoading, setReminderCountsLoading] = useState(true)
 
+  const [goalData, setGoalData] = useState<GoalAttainmentBundle | null>(null)
+  const [goalLoading, setGoalLoading] = useState(true)
+
   const [pipeline, setPipeline] = useState<PipelineDonutData | null>(null)
   const [pipelineLoading, setPipelineLoading] = useState(true)
 
@@ -163,6 +168,13 @@ export default function DashboardPage() {
       .catch((err) => console.error('[dashboard] reminder counts failed:', err))
       .finally(() => setReminderCountsLoading(false))
 
+    // Monthly goal attainment (always current month, independent of range)
+    setGoalLoading(true)
+    void loadGoalAttainment(db, pIds)
+      .then((g) => setGoalData(g))
+      .catch((err) => console.error('[dashboard] goal attainment failed:', err))
+      .finally(() => setGoalLoading(false))
+
     // Pipeline donut
     setPipelineLoading(true)
     void loadPipelineDonut(db, pIds)
@@ -204,6 +216,7 @@ export default function DashboardPage() {
   }, [dateRange, selectedUserId, visibleIds, showTeam, profile])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (profile && visibleIds !== null) loadAll()
   }, [profile, visibleIds, loadAll])
 
@@ -287,13 +300,14 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Charts row — pipeline + won/lost */}
+      {/* Charts row — pipeline + won/lost + monthly target */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         <div className="h-full lg:col-span-3">
           <PipelineDonut data={pipeline} loading={pipelineLoading} />
         </div>
-        <div className="h-full lg:col-span-2">
+        <div className="lg:col-span-2 space-y-4">
           <WonLostChart data={wonLost} loading={wonLostLoading} />
+          <GoalAttainment data={goalData} loading={goalLoading} />
         </div>
       </div>
 

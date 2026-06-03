@@ -130,6 +130,23 @@ export async function buildContext(
       break
     }
 
+    case 'lead.sla_breached': {
+      const table = event.entityType === 'deal' ? 'deals' : 'contacts'
+      const nameCol = event.entityType === 'deal' ? 'title' : 'name'
+      const { data: entity } = await admin
+        .from(table)
+        .select(`${nameCol}, created_at`)
+        .eq('id', event.entityId).single()
+      const e = entity as { title?: string; name?: string; created_at?: string } | null
+      ctx.entity_name = e?.title ?? e?.name ?? 'Lead'
+      ctx.assignee_name = await profileName(admin, event.assigneeProfileId)
+      if (e?.created_at) {
+        const mins = Math.floor((Date.now() - new Date(e.created_at).getTime()) / 60_000)
+        ctx.minutes_waiting = String(Math.max(1, mins))
+      }
+      break
+    }
+
     case 'proposal.viewed':
     case 'proposal.accepted':
     case 'proposal.rejected': {
@@ -155,6 +172,15 @@ export async function buildContext(
       ctx.agent_name = await profileName(admin, event.agentProfileId)
       break
     }
+
+    case 'note.mention': {
+      const { data: contact } = await admin
+        .from('contacts').select('name').eq('id', event.contactId).single()
+      ctx.contact_name = contact?.name ?? 'a contact'
+      ctx.mentioner_name = (await profileName(admin, event.actorProfileId)) || 'A teammate'
+      ctx.note_excerpt = (event.noteText ?? '').slice(0, 140)
+      break
+    }
   }
 
   return ctx
@@ -175,6 +201,7 @@ export function resolveEntity(event: NotificationEvent): { entityType: EntityTyp
       return { entityType: 'deal', entityId: event.dealId }
     case 'reminder.due_today':
     case 'reminder.overdue':
+    case 'lead.sla_breached':
       return { entityType: event.entityType, entityId: event.entityId }
     case 'proposal.viewed':
     case 'proposal.accepted':
@@ -182,5 +209,7 @@ export function resolveEntity(event: NotificationEvent): { entityType: EntityTyp
       return { entityType: 'proposal', entityId: event.proposalId }
     case 'conversation.assigned':
       return { entityType: 'conversation', entityId: event.conversationId }
+    case 'note.mention':
+      return { entityType: 'contact', entityId: event.contactId }
   }
 }

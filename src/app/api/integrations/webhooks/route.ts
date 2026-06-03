@@ -32,6 +32,7 @@ export async function POST(request: Request) {
     round_robin_override?: boolean
     round_robin_member_ids?: string[]
     rate_limit_per_minute?: number
+    public_form_enabled?: boolean
   } | null
 
   if (!body) {
@@ -86,6 +87,7 @@ export async function POST(request: Request) {
       round_robin_override: body.round_robin_override ?? false,
       round_robin_member_ids: body.round_robin_member_ids ?? [],
       rate_limit_per_minute: limit,
+      public_form_enabled: body.public_form_enabled ?? false,
       secret_encrypted: encrypted,
       secret_prefix: prefix,
       created_by: caller.profileId,

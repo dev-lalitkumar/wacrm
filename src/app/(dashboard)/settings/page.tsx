@@ -17,6 +17,8 @@ import {
   Share2,
   Phone,
   Bell,
+  Target as TargetIcon,
+  ShieldCheck,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
@@ -36,6 +38,9 @@ import { GmailConfig } from '@/components/settings/gmail-config';
 import { MetaConfig } from '@/components/settings/meta-config';
 import { CallCenterConfig } from '@/components/settings/call-center-config';
 import { NotificationTemplatesManager } from '@/components/settings/notification-templates-manager';
+import { SlaSettings } from '@/components/settings/sla-settings';
+import { TargetsManager } from '@/components/settings/targets-manager';
+import { AuditLog } from '@/components/settings/audit-log';
 import { useAuth } from '@/hooks/use-auth';
 import {
   canManageTeam,
@@ -45,6 +50,7 @@ import {
   canManageEmailConfig,
   canManageMetaConfig,
   canManageCallCenter,
+  canManageTargets,
 } from '@/lib/auth/permissions';
 
 const TAB_VALUES = [
@@ -55,6 +61,8 @@ const TAB_VALUES = [
   'lost-reasons',
   'sources',
   'integrations',
+  'targets',
+  'audit',
   'whatsapp',
   'email',
   'meta',
@@ -98,6 +106,8 @@ export default function SettingsPage() {
   const showMeta = profileLoading || canManageMetaConfig(role);
   const showCallCenter = profileLoading || canManageCallCenter(role);
   const showNotifications = profileLoading || canManageCompany(role);
+  const showTargets = profileLoading || canManageTargets(role);
+  const showAudit = profileLoading || canManageCompany(role);
 
   // The URL is the single source of truth for the active tab — no
   // local state, no sync effect. A previous revision duplicated this
@@ -129,6 +139,12 @@ export default function SettingsPage() {
     tab = 'profile';
   }
   if (tab === 'notifications' && !showNotifications) {
+    tab = 'profile';
+  }
+  if (tab === 'targets' && !showTargets) {
+    tab = 'profile';
+  }
+  if (tab === 'audit' && !showAudit) {
     tab = 'profile';
   }
 
@@ -210,6 +226,18 @@ export default function SettingsPage() {
               Notifications
             </TabsTrigger>
           )}
+          {showTargets && (
+            <TabsTrigger value="targets" className={triggerCls}>
+              <TargetIcon className="size-4 shrink-0" />
+              Targets
+            </TabsTrigger>
+          )}
+          {showAudit && (
+            <TabsTrigger value="audit" className={triggerCls}>
+              <ShieldCheck className="size-4 shrink-0" />
+              Audit Log
+            </TabsTrigger>
+          )}
 
           <NavSection>Channels</NavSection>
           <TabsTrigger value="whatsapp" className={triggerCls}>
@@ -289,8 +317,21 @@ export default function SettingsPage() {
           </TabsContent>
 
           {showNotifications && (
-            <TabsContent value="notifications">
+            <TabsContent value="notifications" className="space-y-6">
+              <SlaSettings />
               <NotificationTemplatesManager />
+            </TabsContent>
+          )}
+
+          {showTargets && (
+            <TabsContent value="targets">
+              <TargetsManager />
+            </TabsContent>
+          )}
+
+          {showAudit && (
+            <TabsContent value="audit">
+              <AuditLog />
             </TabsContent>
           )}
 

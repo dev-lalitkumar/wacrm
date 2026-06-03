@@ -167,6 +167,11 @@ export function canViewTeamReports(role: Role | string | null | undefined) {
   return role === 'admin' || role === 'owner' || role === 'manager'
 }
 
+/** Admin/Owner/Manager set sales targets / quotas for reps */
+export function canManageTargets(role: Role | string | null | undefined) {
+  return role === 'admin' || role === 'owner' || role === 'manager'
+}
+
 export const ROLE_LABEL: Record<Role, string> = {
   admin: 'Admin',
   owner: 'Owner',

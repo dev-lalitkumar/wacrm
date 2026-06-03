@@ -6,6 +6,7 @@ import { normalizePhone, phonesMatch } from '@/lib/whatsapp/phone-utils'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
+import { dispatchNotification } from '@/lib/notifications/service'
 
 // Lazy-initialized to avoid build-time crash when env vars are missing
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -839,20 +840,44 @@ async function findOrCreateContact(
     return { contact: existingContact, wasCreated: false }
   }
 
-  // Create new contact
+  // New inbound contact = a new lead. Tag the WhatsApp source and route it
+  // through the global round-robin pool (same fairness as webhook/Meta leads).
+  const [{ data: waSource }, { data: rrAssignee }] = await Promise.all([
+    supabaseAdmin().from('sources').select('id').eq('key', 'whatsapp').maybeSingle(),
+    // Passing a null webhook id falls through to the global round-robin pool.
+    supabaseAdmin().rpc('pick_next_assignee', { p_webhook_id: null }),
+  ])
+
+  const insertRow: Record<string, unknown> = {
+    user_id: userId,
+    phone,
+    name: name || phone,
+  }
+  if (waSource?.id) insertRow.source_id = waSource.id
+  // If round-robin yields an assignee use it; otherwise the DB trigger
+  // defaults assigned_to to the WhatsApp config owner.
+  if (rrAssignee) insertRow.assigned_to = rrAssignee as string
+
   const { data: newContact, error: createError } = await supabaseAdmin()
     .from('contacts')
-    .insert({
-      user_id: userId,
-      phone,
-      name: name || phone,
-    })
+    .insert(insertRow)
     .select()
     .single()
 
   if (createError) {
     console.error('Error creating contact:', createError)
     return null
+  }
+
+  // Alert the assigned rep that a fresh WhatsApp lead landed (only when
+  // round-robin actively distributed it, to avoid nagging the number owner).
+  if (rrAssignee) {
+    dispatchNotification({
+      type: 'contact.assigned',
+      contactId: newContact.id,
+      assigneeProfileId: rrAssignee as string,
+      assignerProfileId: null,
+    }).catch((err) => console.error('[webhook] contact.assigned notify failed:', err))
   }
 
   return { contact: newContact, wasCreated: true }

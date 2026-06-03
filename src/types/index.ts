@@ -30,6 +30,25 @@ export interface Profile {
   created_at: string;
 }
 
+export type LeadStatus = 'new' | 'contacted' | 'qualified' | 'unqualified' | 'junk';
+
+export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
+  new: 'New',
+  contacted: 'Contacted',
+  qualified: 'Qualified',
+  unqualified: 'Unqualified',
+  junk: 'Junk',
+};
+
+/** Tailwind chip classes per lead status. */
+export const LEAD_STATUS_STYLES: Record<LeadStatus, string> = {
+  new: 'bg-blue-500/15 text-blue-400',
+  contacted: 'bg-amber-500/15 text-amber-400',
+  qualified: 'bg-green-500/15 text-green-400',
+  unqualified: 'bg-slate-600/40 text-slate-400',
+  junk: 'bg-red-500/15 text-red-400',
+};
+
 export interface Contact {
   id: string;
   /** auth.users.id of whoever first inserted the row (audit). */
@@ -50,6 +69,8 @@ export interface Contact {
   source_id?: string | null;
   /** Embedded source row when loaded via nested join. */
   source?: Source;
+  /** Lead qualification status (migration 038). */
+  lead_status?: LeadStatus;
   /** Active reminder fields — same pattern as deals. Added in 028. */
   reminder_type?: DealReminderType;
   reminder_at?: string;
@@ -111,11 +132,32 @@ export interface Followup {
   created_by: string;
   created_at: string;
   creator?: Profile;
+  // Outcome / disposition (migration 035)
+  outcome?: FollowupOutcome | null;
   // Call Center metadata (migration 026)
   call_log_id?: string | null;
   recording_url?: string | null;
   call_duration?: number | null;
 }
+
+export type FollowupOutcome =
+  | 'connected'
+  | 'no_answer'
+  | 'left_message'
+  | 'callback'
+  | 'interested'
+  | 'not_interested'
+  | 'wrong_number';
+
+export const FOLLOWUP_OUTCOME_LABELS: Record<FollowupOutcome, string> = {
+  connected: 'Connected',
+  no_answer: 'No Answer',
+  left_message: 'Left Message',
+  callback: 'Callback Requested',
+  interested: 'Interested',
+  not_interested: 'Not Interested',
+  wrong_number: 'Wrong Number',
+};
 
 /** @deprecated Use {@link Followup} instead — kept for backward compat during migration. */
 export type DealFollowup = Followup;
@@ -639,6 +681,9 @@ export interface Webhook {
   round_robin_last_index: number;
 
   rate_limit_per_minute: number;
+
+  /** When true, a public hosted form at /f/<id> can submit without the secret. */
+  public_form_enabled?: boolean;
 
   created_by?: string | null;
   created_at: string;

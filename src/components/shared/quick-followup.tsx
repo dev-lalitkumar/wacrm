@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { timeAgo } from "@/lib/utils";
-import type { Followup, FollowupChannel, DealReminderType } from "@/types";
+import type { Followup, FollowupChannel, DealReminderType, FollowupOutcome } from "@/types";
+import { FOLLOWUP_OUTCOME_LABELS } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -24,6 +25,8 @@ const REMINDER_TYPES: { value: DealReminderType; label: string }[] = [
   { value: "meeting",  label: "Meeting" },
   { value: "other",    label: "Other" },
 ];
+
+const OUTCOMES = Object.entries(FOLLOWUP_OUTCOME_LABELS) as [FollowupOutcome, string][];
 
 type FollowupRow = Followup & { creator?: { full_name?: string; email?: string } };
 
@@ -72,6 +75,7 @@ export function QuickFollowup({ contactId, dealId, onSaved, showHistory = true, 
   const supabase = createClient();
 
   const [channel, setChannel] = useState<FollowupChannel | "">("");
+  const [outcome, setOutcome] = useState<FollowupOutcome | "">("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [history, setHistory] = useState<FollowupRow[]>([]);
@@ -137,6 +141,7 @@ export function QuickFollowup({ contactId, dealId, onSaved, showHistory = true, 
       created_by: profile.id,
     };
     if (dealId) row.deal_id = dealId;
+    if (outcome) row.outcome = outcome;
 
     const { error: fuError } = await supabase.from("followups").insert(row);
     if (fuError) {
@@ -174,6 +179,7 @@ export function QuickFollowup({ contactId, dealId, onSaved, showHistory = true, 
 
     toast.success(setReminder ? "Follow-up saved & reminder set" : "Follow-up saved");
     setChannel("");
+    setOutcome("");
     setNote("");
     setReminderNote("");
     setReminderAt(tomorrowAt9());
@@ -205,6 +211,29 @@ export function QuickFollowup({ contactId, dealId, onSaved, showHistory = true, 
           </button>
         ))}
       </div>
+
+      {/* Outcome / disposition — optional, shown once a channel is chosen */}
+      {channel && (
+        <div className="space-y-1">
+          <Label className="text-slate-400 text-[11px]">Outcome (optional)</Label>
+          <div className="flex flex-wrap gap-1.5">
+            {OUTCOMES.map(([val, label]) => (
+              <button
+                key={val}
+                type="button"
+                onClick={() => setOutcome((cur) => (cur === val ? "" : val))}
+                className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition-all cursor-pointer ${
+                  outcome === val
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200 border border-slate-700"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Note textarea */}
       <Textarea
@@ -348,6 +377,11 @@ export function QuickFollowup({ contactId, dealId, onSaved, showHistory = true, 
                     <span className="inline-flex items-center gap-1 rounded-full bg-slate-700 px-1.5 py-0.5 text-[10px] font-medium text-slate-300">
                       {ch?.icon} {ch?.label ?? f.channel}
                     </span>
+                    {f.outcome && (
+                      <span className="inline-flex items-center rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                        {FOLLOWUP_OUTCOME_LABELS[f.outcome]}
+                      </span>
+                    )}
                     <span className="text-slate-500 ml-auto">{timeAgo(f.created_at)}</span>
                   </div>
                   <p className="text-slate-300 leading-relaxed">{f.note}</p>
