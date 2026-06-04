@@ -10,7 +10,7 @@ import type { CustomField, WebhookFieldMappings } from '@/types'
  * Accepts an optional leading "$." which JSONPath-style users tend
  * to type — stripped silently.
  */
-function resolvePath(root: unknown, path: string): unknown {
+export function resolvePath(root: unknown, path: string): unknown {
   if (!path) return undefined
   const cleaned = path.startsWith('$.') ? path.slice(2) : path
   const parts = cleaned.split('.').filter(Boolean)

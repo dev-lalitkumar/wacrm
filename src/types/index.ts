@@ -708,6 +708,104 @@ export interface WebhookRequest {
 }
 
 // ============================================================
+// Lead Fetch Sources — pull-based ingestion (migration 042)
+// ============================================================
+
+/** A request header. `value` may carry a secret (encrypted at rest). */
+export interface FetchHeader {
+  key: string;
+  value: string;
+}
+
+/**
+ * A query-string parameter whose value is a template string. Supports
+ * dynamic-date placeholders evaluated at fetch time, e.g.
+ *   { key: "created_after", value_template: "{{now-24h|iso}}" }
+ * See `renderTemplate` in `src/lib/integrations/template.ts`.
+ */
+export interface FetchQueryParam {
+  key: string;
+  value_template: string;
+}
+
+/** Allowed poll cadences (minutes). */
+export type LeadFetchInterval = 1 | 5 | 10 | 20;
+
+/** Rolling status of a source's most recent poll. */
+export type LeadFetchStatus = 'idle' | 'ok' | 'error' | 'partial';
+
+/** Terminal status recorded for a single poll run. */
+export type LeadFetchRunStatus = 'ok' | 'error' | 'partial' | 'disabled';
+
+export interface LeadFetchSource {
+  id: string;
+  name: string;
+  source_id: string;
+  is_active: boolean;
+
+  creates_deal: boolean;
+  pipeline_id?: string | null;
+  stage_id?: string | null;
+
+  // request config
+  endpoint_url: string;
+  http_method: 'GET' | 'POST';
+  /**
+   * AES-GCM ciphertext of a JSON array of FetchHeader. Decrypted only
+   * server-side (engine + the admin GET route). Never decrypted in the
+   * browser.
+   */
+  headers_encrypted?: string | null;
+  query_params: FetchQueryParam[];
+  body_template?: Record<string, unknown> | null;
+
+  // response parsing
+  /** Dot path to the lead array; null/empty ⇒ the body IS the array. */
+  items_path?: string | null;
+  /** Path within each item used as the dedup key, e.g. "$.id". */
+  ref_id_path: string;
+  field_mappings: WebhookFieldMappings;
+
+  // scheduling
+  poll_interval_minutes: LeadFetchInterval;
+  last_polled_at?: string | null;
+  next_poll_at?: string | null;
+  last_cursor?: string | null;
+  last_status: LeadFetchStatus;
+  last_error?: string | null;
+
+  // assignment
+  round_robin_override: boolean;
+  round_robin_member_ids: string[];
+  round_robin_last_index: number;
+
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+
+  /** Embedded when loaded via nested join. */
+  source?: Source;
+  pipeline?: Pipeline;
+  stage?: PipelineStage;
+}
+
+export interface LeadFetchRun {
+  id: string;
+  fetch_source_id: string;
+  started_at: string;
+  finished_at?: string | null;
+  status: LeadFetchRunStatus;
+  http_status?: number | null;
+  resolved_url?: string | null;
+  items_fetched: number;
+  items_created: number;
+  items_skipped: number;
+  items_failed: number;
+  error_message?: string | null;
+  response_preview?: string | null;
+}
+
+// ============================================================
 // Catalog & Proposals (migration 023)
 // ============================================================
 

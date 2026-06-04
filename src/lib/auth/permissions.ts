@@ -121,6 +121,17 @@ export function canManageSources(role: Role | string | null | undefined) {
   return role === 'admin'
 }
 
+// ── Lead Fetch Sources — pull-based ingestion (migration 042) ───
+//
+// Same access model as webhooks: Admin full CRUD; Owner/Manager view.
+export function canManageFetchSources(role: Role | string | null | undefined) {
+  return role === 'admin'
+}
+
+export function canViewFetchSources(role: Role | string | null | undefined) {
+  return role === 'admin' || role === 'owner' || role === 'manager'
+}
+
 // ── Lost Reasons (migration 018) ───────────────────────────────
 export function canManageLostReasons(role: Role | string | null | undefined) {
   return role === 'admin'

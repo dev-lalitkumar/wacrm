@@ -6,12 +6,15 @@ import { useAuth } from '@/hooks/use-auth'
 import {
   canManageWebhooks,
   canViewWebhooks,
+  canManageFetchSources,
+  canViewFetchSources,
 } from '@/lib/auth/permissions'
 import type {
   Profile,
   RoundRobinConfig,
   Source,
   Webhook,
+  LeadFetchSource,
 } from '@/types'
 import { Button } from '@/components/ui/button'
 import {
@@ -23,20 +26,26 @@ import {
   Webhook as WebhookIcon,
   Users,
   Check,
+  DownloadCloud,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { timeAgo } from '@/lib/utils'
 import { WebhookFormDialog } from './webhook-form-dialog'
 import { WebhookDetailDialog } from './webhook-detail-dialog'
+import { FetchSourceFormDialog } from './fetch-source-form-dialog'
+import { FetchSourceDetailDialog } from './fetch-source-detail-dialog'
 
 export function IntegrationsManager() {
   const supabase = createClient()
   const { profile } = useAuth()
   const canManage = canManageWebhooks(profile?.role ?? null)
   const canView = canViewWebhooks(profile?.role ?? null)
+  const canManageFetch = canManageFetchSources(profile?.role ?? null)
+  const canViewFetch = canViewFetchSources(profile?.role ?? null)
 
   // ─── Loaded data ────────────────────────────────────────────────
   const [webhooks, setWebhooks] = useState<Webhook[]>([])
+  const [fetchSources, setFetchSources] = useState<LeadFetchSource[]>([])
   const [sources, setSources] = useState<Source[]>([])
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [rrConfig, setRrConfig] = useState<RoundRobinConfig | null>(null)
@@ -58,12 +67,23 @@ export function IntegrationsManager() {
     raw: string
   } | null>(null)
 
+  // ─── Fetch-source dialog state ──────────────────────────────────
+  const [fsFormOpen, setFsFormOpen] = useState(false)
+  const [editingFetchSource, setEditingFetchSource] = useState<LeadFetchSource | null>(null)
+  const [detailFetchSourceId, setDetailFetchSourceId] = useState<string | null>(null)
+  const [deleteFetchSource, setDeleteFetchSource] = useState<LeadFetchSource | null>(null)
+  const [deletingFs, setDeletingFs] = useState(false)
+
   const fetchAll = useCallback(async () => {
     setLoading(true)
-    const [whRes, srcRes, profRes, rrRes] = await Promise.all([
+    const [whRes, fsRes, srcRes, profRes, rrRes] = await Promise.all([
       supabase
         .from('webhooks')
         .select('*, source:sources(id, name, key), pipeline:pipelines(id, name), stage:pipeline_stages(id, name, color)')
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('lead_fetch_sources')
+        .select('*, source:sources(id, name, key)')
         .order('created_at', { ascending: false }),
       supabase.from('sources').select('*').order('sort_order'),
       supabase
@@ -75,6 +95,7 @@ export function IntegrationsManager() {
     ])
 
     setWebhooks((whRes.data ?? []) as Webhook[])
+    setFetchSources((fsRes.data ?? []) as LeadFetchSource[])
     setSources((srcRes.data ?? []) as Source[])
     setProfiles((profRes.data ?? []) as Profile[])
 
@@ -141,6 +162,22 @@ export function IntegrationsManager() {
     }
     toast.success('Webhook deleted')
     setDeleteWebhook(null)
+    fetchAll()
+  }
+
+  async function confirmDeleteFetchSource() {
+    if (!deleteFetchSource) return
+    setDeletingFs(true)
+    const res = await fetch(`/api/integrations/fetch-sources/${deleteFetchSource.id}`, {
+      method: 'DELETE',
+    })
+    setDeletingFs(false)
+    if (!res.ok) {
+      toast.error('Failed to delete fetch source')
+      return
+    }
+    toast.success('Fetch source deleted')
+    setDeleteFetchSource(null)
     fetchAll()
   }
 
@@ -347,6 +384,117 @@ export function IntegrationsManager() {
         )}
       </div>
 
+      {/* ── Card 3: Fetch Sources (pull-based ingestion) ──────── */}
+      {canViewFetch && (
+        <div className="rounded-lg border border-slate-700 bg-slate-800/40">
+          <div className="flex items-center justify-between p-4 border-b border-slate-700/60">
+            <div className="flex items-start gap-3">
+              <DownloadCloud className="size-5 shrink-0 text-primary mt-0.5" />
+              <div>
+                <h2 className="text-base font-semibold text-white">Fetch Sources</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Pull leads from a provider&rsquo;s API on a schedule (every 1–20 minutes).
+                </p>
+              </div>
+            </div>
+            {canManageFetch && (
+              <Button
+                onClick={() => {
+                  setEditingFetchSource(null)
+                  setFsFormOpen(true)
+                }}
+                size="sm"
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                <Plus className="size-4" /> Add Fetch Source
+              </Button>
+            )}
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="size-5 animate-spin text-slate-500" />
+            </div>
+          ) : fetchSources.length === 0 ? (
+            <div className="py-10 text-center text-sm text-slate-500">
+              {canManageFetch
+                ? 'No fetch sources yet. Add one to poll a provider for leads.'
+                : 'No fetch sources defined.'}
+            </div>
+          ) : (
+            <ul className="divide-y divide-slate-700/50">
+              {fetchSources.map((fs) => (
+                <li key={fs.id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium text-slate-200 truncate">{fs.name}</span>
+                      {fs.source && (
+                        <span className="inline-flex items-center rounded-full bg-slate-700 px-1.5 py-0.5 text-[10px] font-medium text-slate-300">
+                          {fs.source.name}
+                        </span>
+                      )}
+                      <span
+                        className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                          fs.is_active
+                            ? 'bg-emerald-500/15 text-emerald-400'
+                            : 'bg-slate-700 text-slate-500'
+                        }`}
+                      >
+                        {fs.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                      <span className="inline-flex items-center rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-400">
+                        Every {fs.poll_interval_minutes}m
+                      </span>
+                      {fs.last_status === 'error' && (
+                        <span className="inline-flex items-center rounded-full bg-red-500/15 px-1.5 py-0.5 text-[10px] font-medium text-red-400">
+                          Error
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      {fs.last_polled_at ? `Last polled ${timeAgo(fs.last_polled_at)}` : 'Never polled'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setDetailFetchSourceId(fs.id)}
+                      className="rounded p-1.5 text-slate-400 hover:bg-slate-700 hover:text-white cursor-pointer"
+                      title="View details & runs"
+                    >
+                      <Eye className="size-3.5" />
+                    </button>
+                    {canManageFetch && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingFetchSource(fs)
+                            setFsFormOpen(true)
+                          }}
+                          className="rounded p-1.5 text-slate-400 hover:bg-slate-700 hover:text-white cursor-pointer"
+                          title="Edit"
+                        >
+                          <Pencil className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteFetchSource(fs)}
+                          className="rounded p-1.5 text-slate-400 hover:bg-red-500/15 hover:text-red-400 cursor-pointer"
+                          title="Delete"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {/* Webhook create/edit dialog */}
       <WebhookFormDialog
         open={formOpen}
@@ -389,6 +537,100 @@ export function IntegrationsManager() {
           onConfirm={confirmDelete}
         />
       )}
+
+      {/* Fetch-source create/edit dialog */}
+      <FetchSourceFormDialog
+        open={fsFormOpen}
+        onOpenChange={setFsFormOpen}
+        fetchSource={editingFetchSource}
+        sources={sources}
+        profiles={profiles}
+        onSaved={fetchAll}
+      />
+
+      {/* Fetch-source detail dialog */}
+      <FetchSourceDetailDialog
+        open={!!detailFetchSourceId}
+        onOpenChange={(o) => {
+          if (!o) setDetailFetchSourceId(null)
+        }}
+        fetchSourceId={detailFetchSourceId}
+        onChanged={fetchAll}
+      />
+
+      {/* Fetch-source delete confirm */}
+      {deleteFetchSource && (
+        <DeleteFetchSourceConfirm
+          fetchSource={deleteFetchSource}
+          deleting={deletingFs}
+          onCancel={() => setDeleteFetchSource(null)}
+          onConfirm={confirmDeleteFetchSource}
+        />
+      )}
+    </div>
+  )
+}
+
+// ───────────────────────────────────────────────────────────────
+// Fetch-source delete confirm — typed-name verification
+// ───────────────────────────────────────────────────────────────
+function DeleteFetchSourceConfirm({
+  fetchSource,
+  deleting,
+  onCancel,
+  onConfirm,
+}: {
+  fetchSource: LeadFetchSource
+  deleting: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const [typed, setTyped] = useState('')
+  const match = typed === fetchSource.name
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-md rounded-lg border border-slate-700 bg-slate-900 p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-base font-semibold text-white">Delete Fetch Source?</h3>
+        <p className="text-sm text-slate-400 mt-1">
+          This permanently removes the source and its poll history. Polling stops immediately.
+          Already-ingested contacts and deals are kept. Type the name to confirm:
+        </p>
+        <p className="mt-3 rounded-md bg-slate-800/60 px-2 py-1 font-mono text-sm text-slate-300">
+          {fetchSource.name}
+        </p>
+        <input
+          type="text"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          placeholder="Type the name…"
+          autoFocus
+          className="mt-2 h-9 w-full rounded-md border border-slate-700 bg-slate-800 px-2.5 text-sm text-white outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
+        />
+        <div className="mt-4 flex justify-end gap-2">
+          <Button
+            variant="outline"
+            onClick={onCancel}
+            className="border-slate-700 bg-transparent text-slate-300 hover:bg-slate-800"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={onConfirm}
+            disabled={!match || deleting}
+            className="bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            {deleting && <Loader2 className="size-4 animate-spin" />}
+            Delete Fetch Source
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }
