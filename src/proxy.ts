@@ -2,6 +2,16 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function proxy(request: NextRequest) {
+  // Supabase email links whose redirect URL isn't allow-listed fall back to
+  // the Site URL root, landing as `/?code=...`. Forward those to the
+  // code-exchange handler so password resets still complete.
+  if (request.nextUrl.pathname === '/' && request.nextUrl.searchParams.get('code')) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/auth/callback'
+    if (!url.searchParams.get('next')) url.searchParams.set('next', '/reset-password')
+    return NextResponse.redirect(url)
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(

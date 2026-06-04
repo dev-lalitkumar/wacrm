@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -23,6 +23,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const supabase = createClient();
+
+  // Surface messages passed back from the auth callback (e.g. expired reset link).
+  useEffect(() => {
+    const err = new URLSearchParams(window.location.search).get("error");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (err) setError(err);
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
