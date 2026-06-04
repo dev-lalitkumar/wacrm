@@ -36,9 +36,10 @@ export function WhatsAppCoexistenceSection() {
   const [sdkLoaded, setSdkLoaded] = useState(false)
   const [launching, setLaunching] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
-  const sessionInfoRef = useRef<{ phone_number_id?: string; waba_id?: string; access_token?: string } | null>(null)
+  const sessionInfoRef = useRef<{ phone_number_id?: string; waba_id?: string } | null>(null)
 
   const appId = process.env.NEXT_PUBLIC_META_APP_ID
+  const configId = process.env.NEXT_PUBLIC_META_CONFIG_ID
 
   // Load Facebook JS SDK
   useEffect(() => {
@@ -65,6 +66,32 @@ export function WhatsAppCoexistenceSection() {
     document.head.appendChild(script)
   }, [appId])
 
+  // Capture session info (phone_number_id / waba_id) posted by the
+  // Embedded Signup popup via window.postMessage.
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (
+        event.origin !== 'https://www.facebook.com' &&
+        event.origin !== 'https://web.facebook.com'
+      ) {
+        return
+      }
+      try {
+        const data = JSON.parse(event.data)
+        if (data.type === 'WA_EMBEDDED_SIGNUP' && data.event === 'FINISH') {
+          sessionInfoRef.current = {
+            phone_number_id: data.data?.phone_number_id,
+            waba_id: data.data?.waba_id,
+          }
+        }
+      } catch {
+        // Non-JSON messages from the SDK — ignore.
+      }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
+
   // Fetch existing WA config
   useEffect(() => {
     fetch('/api/meta/whatsapp/status')
@@ -86,16 +113,13 @@ export function WhatsAppCoexistenceSection() {
       toast.error('Facebook SDK not loaded. Please refresh the page.')
       return
     }
+    if (!configId) {
+      toast.error('WhatsApp Embedded Signup is not configured. Add NEXT_PUBLIC_META_CONFIG_ID.')
+      return
+    }
 
+    sessionInfoRef.current = null
     setLaunching(true)
-
-    // Subscribe to session info from embedded signup
-    window.FB.Event.subscribe(
-      'WhatsAppEmbeddedSignup.sessionInfoListener',
-      (data: { phone_number_id?: string; waba_id?: string; access_token?: string }) => {
-        sessionInfoRef.current = data
-      },
-    )
 
     window.FB.login(
       async (response: { authResponse?: { accessToken?: string } }) => {
@@ -106,11 +130,9 @@ export function WhatsAppCoexistenceSection() {
           return
         }
 
-        // Use session info if captured, otherwise use the access token from login
-        const sessionInfo = sessionInfoRef.current
-        const accessToken = sessionInfo?.access_token ?? response.authResponse.accessToken
-        const phoneNumberId = sessionInfo?.phone_number_id
-        const wabaId = sessionInfo?.waba_id
+        const accessToken = response.authResponse.accessToken
+        const phoneNumberId = sessionInfoRef.current?.phone_number_id
+        const wabaId = sessionInfoRef.current?.waba_id
 
         if (!phoneNumberId || !wabaId) {
           toast.error('WhatsApp setup completed but phone number ID / WABA ID were not captured. Please check your Meta App configuration.')
@@ -135,12 +157,13 @@ export function WhatsAppCoexistenceSection() {
         }
       },
       {
-        scope: 'whatsapp_business_management,whatsapp_business_messaging',
+        config_id: configId,
+        response_type: 'token',
+        override_default_response_type: true,
         extras: {
-          feature: 'whatsapp_embedded_signup',
-          setup: {
-            solutionID: '',
-          },
+          setup: {},
+          featureType: '',
+          sessionInfoVersion: '3',
         },
       },
     )
@@ -196,12 +219,20 @@ export function WhatsAppCoexistenceSection() {
           </Alert>
         )}
 
-        {!appId && (
+        {(!appId || !configId) && (
           <Alert className="border-amber-500/30 bg-amber-500/5">
             <AlertTriangle className="size-4 text-amber-400" />
             <AlertTitle className="text-amber-400">Not Configured</AlertTitle>
             <AlertDescription className="text-slate-300">
-              Add <code className="rounded bg-slate-800 px-1 text-xs text-slate-200">NEXT_PUBLIC_META_APP_ID</code> to your environment variables.
+              Add{' '}
+              {!appId && (
+                <code className="rounded bg-slate-800 px-1 text-xs text-slate-200">NEXT_PUBLIC_META_APP_ID</code>
+              )}
+              {!appId && !configId && ' and '}
+              {!configId && (
+                <code className="rounded bg-slate-800 px-1 text-xs text-slate-200">NEXT_PUBLIC_META_CONFIG_ID</code>
+              )}{' '}
+              to your environment variables.
             </AlertDescription>
           </Alert>
         )}
@@ -209,7 +240,7 @@ export function WhatsAppCoexistenceSection() {
         <div className="flex flex-wrap gap-3">
           <Button
             onClick={launchEmbeddedSignup}
-            disabled={!sdkLoaded || !appId || launching}
+            disabled={!sdkLoaded || !appId || !configId || launching}
             className="bg-green-600 text-white hover:bg-green-700"
           >
             {launching ? (
