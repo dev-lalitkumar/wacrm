@@ -1,24 +1,25 @@
 import Link from "next/link";
 import { Mail } from "lucide-react";
 import { Logo } from "./logo";
+import { SUPPORT_EMAIL, FEATURE_NAV_ITEMS } from "./content";
 
-const SUPPORT_EMAIL = "support.crm@tundla.com";
+const PRODUCT_LINKS = [
+  { label: "Overview", href: "/" },
+  { label: "All Features", href: "/features" },
+  ...FEATURE_NAV_ITEMS.map((f) => ({
+    label: f.title,
+    href: `/features/${f.slug}`,
+  })),
+  { label: "Book a demo", href: "/contact" },
+];
 
 const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
-  {
-    title: "Product",
-    links: [
-      { label: "Overview", href: "/" },
-      { label: "Features", href: "/features" },
-      { label: "Book a demo", href: "/contact" },
-      { label: "Sign in", href: "/login" },
-    ],
-  },
   {
     title: "Company",
     links: [
       { label: "Contact us", href: "/contact" },
       { label: "Support", href: `mailto:${SUPPORT_EMAIL}` },
+      { label: "Sign in", href: "/login" },
     ],
   },
   {
@@ -42,8 +43,9 @@ export function PublicFooter() {
           <div className="lg:col-span-2">
             <Logo size={36} />
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-muted-foreground">
-              The WhatsApp-first CRM for modern sales teams. Capture leads,
-              close deals, and talk to customers — all in one fast workspace.
+              The all-in-one CRM for modern sales teams. Capture leads from any
+              source, engage on WhatsApp and email, and close deals — all in one
+              fast workspace.
             </p>
             <a
               href={`mailto:${SUPPORT_EMAIL}`}
@@ -54,10 +56,29 @@ export function PublicFooter() {
             </a>
           </div>
 
-          {/* Link columns */}
+          {/* Product column */}
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Product</h3>
+            <ul className="mt-4 space-y-3">
+              {PRODUCT_LINKS.map((link) => (
+                <li key={link.label}>
+                  <Link
+                    href={link.href}
+                    className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Other columns */}
           {COLUMNS.map((col) => (
             <div key={col.title}>
-              <h3 className="text-sm font-semibold text-foreground">{col.title}</h3>
+              <h3 className="text-sm font-semibold text-foreground">
+                {col.title}
+              </h3>
               <ul className="mt-4 space-y-3">
                 {col.links.map((link) => (
                   <li key={link.label}>
@@ -75,12 +96,18 @@ export function PublicFooter() {
         </div>
 
         <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-white/5 pt-8 text-sm text-muted-foreground sm:flex-row">
-          <p>© {year} Tundla CRM. All rights reserved.</p>
+          <p>&copy; {year} Tundla CRM. All rights reserved.</p>
           <div className="flex items-center gap-6">
-            <Link href="/privacy" className="transition-colors hover:text-foreground">
+            <Link
+              href="/privacy"
+              className="transition-colors hover:text-foreground"
+            >
               Privacy
             </Link>
-            <Link href="/terms" className="transition-colors hover:text-foreground">
+            <Link
+              href="/terms"
+              className="transition-colors hover:text-foreground"
+            >
               Terms
             </Link>
           </div>
