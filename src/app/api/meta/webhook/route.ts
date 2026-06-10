@@ -8,7 +8,8 @@ import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchNotification } from '@/lib/notifications/service'
 import type { LeadgenWebhookPayload } from '@/lib/meta/types'
 
-const FB_LEADS_SOURCE_NAME = 'Facebook Leads'
+const FB_LEADS_SOURCE_NAME = 'Facebook'
+const FB_LEADS_SOURCE_KEY = 'facebook'
 
 /**
  * GET /api/meta/webhook
@@ -78,10 +79,7 @@ export async function POST(request: Request) {
   return NextResponse.json({ status: 'received' })
 }
 
-async function processLeadgenWebhook(
-  body: LeadgenWebhookPayload,
-  rawBody: string,
-) {
+async function processLeadgenWebhook(body: LeadgenWebhookPayload, rawBody: string) {
   if (!body.entry?.length) return
 
   const admin = supabaseAdmin()
@@ -112,40 +110,24 @@ async function processLeadgenWebhook(
   }
 }
 
-async function processOneLead({
-  admin,
-  leadgenId,
-  pageId,
-  formId,
-  sourceId,
-  rawPayload,
-}: {
-  admin: ReturnType<typeof supabaseAdmin>
-  leadgenId: string
-  pageId: string
-  formId: string
-  sourceId: string
-  rawPayload: string
-}) {
+async function processOneLead({ admin, leadgenId, pageId, formId, sourceId, rawPayload }: { admin: ReturnType<typeof supabaseAdmin>; leadgenId: string; pageId: string; formId: string; sourceId: string; rawPayload: string }) {
   // Check for duplicate — Meta can replay events
-  const { data: existing } = await admin
-    .from('meta_webhook_logs')
-    .select('id')
-    .eq('leadgen_id', leadgenId)
-    .eq('status', 'success')
-    .maybeSingle()
+  const { data: existing } = await admin.from('meta_webhook_logs').select('id').eq('leadgen_id', leadgenId).eq('status', 'success').maybeSingle()
 
   if (existing) return // already processed
 
   // Fetch page access token
-  const { data: pageRow } = await admin
-    .from('facebook_pages')
-    .select('access_token')
-    .eq('id', pageId)
-    .maybeSingle()
+  const { data: pageRow } = await admin.from('facebook_pages').select('access_token').eq('id', pageId).maybeSingle()
 
   if (!pageRow?.access_token) {
-    await logEvent(admin, { leadgenId, pageId, formId, status: 'skipped', errorMessage: 'Page not found or not connected', rawPayload })
+    await logEvent(admin, {
+      leadgenId,
+      pageId,
+      formId,
+      status: 'skipped',
+      errorMessage: 'Page not found or not connected',
+      rawPayload,
+    })
     return
   }
 
@@ -153,7 +135,14 @@ async function processOneLead({
   try {
     pageToken = decrypt(pageRow.access_token)
   } catch {
-    await logEvent(admin, { leadgenId, pageId, formId, status: 'error', errorMessage: 'Failed to decrypt page token', rawPayload })
+    await logEvent(admin, {
+      leadgenId,
+      pageId,
+      formId,
+      status: 'error',
+      errorMessage: 'Failed to decrypt page token',
+      rawPayload,
+    })
     return
   }
 
@@ -162,7 +151,14 @@ async function processOneLead({
   try {
     leadData = await fetchLeadData(leadgenId, pageToken)
   } catch (err) {
-    await logEvent(admin, { leadgenId, pageId, formId, status: 'error', errorMessage: `fetchLeadData failed: ${err}`, rawPayload })
+    await logEvent(admin, {
+      leadgenId,
+      pageId,
+      formId,
+      status: 'error',
+      errorMessage: `fetchLeadData failed: ${err}`,
+      rawPayload,
+    })
     return
   }
 
@@ -198,11 +194,7 @@ async function processOneLead({
       context: { vars: { source: 'facebook_leads', leadgen_id: leadgenId } },
     }).catch((err) => console.error('[meta/webhook] automation dispatch failed:', err))
 
-    const contactAssignee =
-      result.assigneeId ??
-      (
-        await admin.from('contacts').select('assigned_to').eq('id', contactId).maybeSingle()
-      ).data?.assigned_to
+    const contactAssignee = result.assigneeId ?? (await admin.from('contacts').select('assigned_to').eq('id', contactId).maybeSingle()).data?.assigned_to
 
     if (contactAssignee) {
       dispatchNotification({
@@ -222,24 +214,30 @@ async function processOneLead({
   }
 }
 
-async function getOrCreateFacebookLeadsSource(
-  admin: ReturnType<typeof supabaseAdmin>,
-): Promise<string | null> {
-  const { data: existing } = await admin
-    .from('sources')
-    .select('id')
-    .eq('name', FB_LEADS_SOURCE_NAME)
-    .maybeSingle()
+async function getOrCreateFacebookLeadsSource(admin: ReturnType<typeof supabaseAdmin>): Promise<string | null> {
+  const { data: byKey } = await admin.from('sources').select('id').eq('key', FB_LEADS_SOURCE_KEY).maybeSingle()
 
-  if (existing) return existing.id
+  if (byKey) return byKey.id
+
+  const { data: byName } = await admin.from('sources').select('id').eq('name', FB_LEADS_SOURCE_NAME).maybeSingle()
+
+  if (byName) return byName.id
 
   const { data: created, error } = await admin
     .from('sources')
-    .insert({ name: FB_LEADS_SOURCE_NAME, color: '#1877F2' })
+    .insert({
+      name: FB_LEADS_SOURCE_NAME,
+      key: FB_LEADS_SOURCE_KEY,
+      sort_order: 10,
+    })
     .select('id')
     .single()
 
   if (error) {
+    // Concurrent webhook may have created the row between our SELECT and INSERT.
+    const { data: raced } = await admin.from('sources').select('id').eq('key', FB_LEADS_SOURCE_KEY).maybeSingle()
+    if (raced) return raced.id
+
     console.error('[meta/webhook] failed to create source:', error.message)
     return null
   }
@@ -257,7 +255,7 @@ async function logEvent(
     dealId?: string
     errorMessage?: string
     rawPayload?: string
-  },
+  }
 ) {
   try {
     await admin.from('meta_webhook_logs').insert({
