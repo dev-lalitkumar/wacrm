@@ -4,6 +4,7 @@ import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { decrypt } from '@/lib/encryption'
 import { fetchLeadData } from '@/lib/meta/facebook-api'
 import { processLeadEvent } from '@/lib/meta/lead-processor'
+import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchNotification } from '@/lib/notifications/service'
 import type { LeadgenWebhookPayload } from '@/lib/meta/types'
 
@@ -185,24 +186,39 @@ async function processOneLead({
     rawPayload,
   })
 
-  // Notify on a genuinely new contact (not an enrichment of an existing one).
-  // The customer-facing welcome is dispatched centrally by createContact; here
-  // we only notify the internal assignee.
-  if (result.status === 'success' && result.contactId && !result.deduplicated) {
-    const contactId = result.contactId
-    // Direct notification to whoever the contact landed on.
-    const { data: contact } = await admin
-      .from('contacts')
-      .select('assigned_to')
-      .eq('id', contactId)
-      .maybeSingle()
-    if (contact?.assigned_to) {
+  if (result.status !== 'success' || !result.contactId) return
+
+  const contactId = result.contactId
+
+  if (!result.deduplicated) {
+    runAutomationsForTrigger({
+      userId: 'facebook-lead-webhook',
+      triggerType: 'new_contact_created',
+      contactId,
+      context: { vars: { source: 'facebook_leads', leadgen_id: leadgenId } },
+    }).catch((err) => console.error('[meta/webhook] automation dispatch failed:', err))
+
+    const contactAssignee =
+      result.assigneeId ??
+      (
+        await admin.from('contacts').select('assigned_to').eq('id', contactId).maybeSingle()
+      ).data?.assigned_to
+
+    if (contactAssignee) {
       dispatchNotification({
         type: 'contact.assigned',
         contactId,
-        assigneeProfileId: contact.assigned_to,
+        assigneeProfileId: contactAssignee,
       }).catch((err) => console.error('[meta/webhook] notify contact.assigned', err))
     }
+  }
+
+  if (result.dealId && result.assigneeId) {
+    dispatchNotification({
+      type: 'deal.assigned',
+      dealId: result.dealId,
+      assigneeProfileId: result.assigneeId,
+    }).catch((err) => console.error('[meta/webhook] notify deal.assigned', err))
   }
 }
 

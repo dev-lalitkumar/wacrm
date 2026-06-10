@@ -10,6 +10,10 @@ import { FacebookPagesSection } from './meta/facebook-pages-section'
 import { WhatsAppCoexistenceSection } from './meta/whatsapp-coexistence-section'
 import { WebhookLogsSection } from './meta/webhook-logs-section'
 import { DeletionRequestsSection } from './meta/deletion-requests-section'
+import {
+  MetaSetupChecklist,
+  useMetaLeadCaptureReady,
+} from './meta/meta-setup-checklist'
 import type { FacebookConfigResponse, FacebookPage } from '@/lib/meta/types'
 
 export function MetaConfig() {
@@ -21,6 +25,11 @@ export function MetaConfig() {
   const [pagesLoading, setPagesLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
+
+  const leadCaptureReady = useMetaLeadCaptureReady(
+    !!config?.connected,
+    pages,
+  )
 
   const loadConfig = useCallback(async () => {
     try {
@@ -174,10 +183,15 @@ export function MetaConfig() {
         loading={configLoading}
         syncing={syncing}
         disconnecting={disconnecting}
+        leadCaptureReady={leadCaptureReady}
         onConnect={handleConnect}
         onDisconnect={handleDisconnect}
         onSync={handleSync}
       />
+
+      {config?.connected && (
+        <MetaSetupChecklist connected={config.connected} pages={pages} />
+      )}
 
       {config?.connected && (
         <>

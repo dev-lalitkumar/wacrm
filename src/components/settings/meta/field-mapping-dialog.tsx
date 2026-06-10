@@ -103,6 +103,17 @@ export function FieldMappingDialog({
   }
 
   async function handleSave() {
+    const hasPhoneOrEmail = Object.values(mappings).some(
+      (v) => v === 'contact|phone' || v === 'contact|email',
+    )
+    if (!hasPhoneOrEmail) {
+      toast.error('Map at least phone or email', {
+        description:
+          'Facebook leads need a phone or email mapping to create contacts and deals in the CRM.',
+      })
+      return
+    }
+
     setSaving(true)
     try {
       const rows = Object.entries(mappings).map(([fbKey, crmValue]) => {

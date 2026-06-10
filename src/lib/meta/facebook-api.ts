@@ -6,6 +6,30 @@ import type {
 
 const GRAPH_BASE = 'https://graph.facebook.com/v21.0'
 
+export interface GraphApiError {
+  message: string
+  code?: number
+}
+
+interface GraphPagedResponse<T> {
+  data?: T[]
+  paging?: { next?: string }
+  error?: GraphApiError
+}
+
+export interface GetLeadFormsResult {
+  forms: GraphLeadFormResult[]
+  tokenUsed: 'page' | 'user'
+  warning?: string
+  graphError?: string
+}
+
+async function parseGraphResponse<T>(
+  res: Response,
+): Promise<T & { error?: GraphApiError }> {
+  return (await res.json()) as T & { error?: GraphApiError }
+}
+
 async function graphRequest<T>(
   path: string,
   options: RequestInit = {},
@@ -17,12 +41,36 @@ async function graphRequest<T>(
       ...options.headers,
     },
   })
-  const json = (await res.json()) as T & { error?: { message: string; code: number } }
-  if (!res.ok || (json as { error?: { message: string } }).error) {
-    const err = (json as { error?: { message: string } }).error
-    throw new Error(err?.message ?? `Graph API error ${res.status} on ${path}`)
+  const json = await parseGraphResponse<T>(res)
+  if (!res.ok || json.error) {
+    throw new Error(json.error?.message ?? `Graph API error ${res.status} on ${path}`)
   }
   return json
+}
+
+/** Follow Graph API cursor pagination until all pages are collected. */
+export async function graphPaginatedRequest<T>(
+  initialPath: string,
+): Promise<{ data: T[]; error?: GraphApiError }> {
+  const all: T[] = []
+  let url: string | null = `${GRAPH_BASE}${initialPath}`
+
+  while (url) {
+    const res: Response = await fetch(url, {
+      headers: { 'Content-Type': 'application/json' },
+    })
+    const json: GraphPagedResponse<T> & { error?: GraphApiError } =
+      await parseGraphResponse<GraphPagedResponse<T>>(res)
+    if (!res.ok || json.error) {
+      return { data: all, error: json.error ?? { message: `Graph API error ${res.status}` } }
+    }
+    if (json.data?.length) {
+      all.push(...json.data)
+    }
+    url = json.paging?.next ?? null
+  }
+
+  return { data: all }
 }
 
 /** Exchange an auth code for a short-lived user access token. */
@@ -99,15 +147,90 @@ export async function unsubscribePageFromLeadgen(
   )
 }
 
-/** List lead gen forms attached to a Page. */
+/** List lead gen forms attached to a Page (paginated). */
 export async function getLeadForms(
   pageId: string,
-  pageToken: string,
+  accessToken: string,
 ): Promise<GraphLeadFormResult[]> {
-  const data = await graphRequest<{ data: GraphLeadFormResult[] }>(
-    `/${pageId}/leadgen_forms?fields=id,name,questions&access_token=${encodeURIComponent(pageToken)}`,
+  const { data, error } = await graphPaginatedRequest<GraphLeadFormResult>(
+    `/${pageId}/leadgen_forms?fields=id,name,questions&limit=100&access_token=${encodeURIComponent(accessToken)}`,
   )
-  return data.data ?? []
+  if (error) {
+    throw new Error(error.message)
+  }
+  return data
+}
+
+/**
+ * Fetch lead forms for a page, retrying with the user token when the page
+ * token returns zero forms (common when Leads Access Manager restricts page tokens).
+ */
+export async function getLeadFormsWithFallback(
+  pageId: string,
+  pageToken: string,
+  userToken?: string | null,
+): Promise<GetLeadFormsResult> {
+  try {
+    const pageForms = await getLeadForms(pageId, pageToken)
+    if (pageForms.length > 0) {
+      return { forms: pageForms, tokenUsed: 'page' }
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (!userToken) {
+      return { forms: [], tokenUsed: 'page', graphError: message }
+    }
+    try {
+      const userForms = await getLeadForms(pageId, userToken)
+      return {
+        forms: userForms,
+        tokenUsed: 'user',
+        warning: userForms.length > 0
+          ? 'Forms fetched using your user token because the page token could not access lead forms.'
+          : undefined,
+        graphError: message,
+      }
+    } catch (userErr) {
+      const userMessage = userErr instanceof Error ? userErr.message : String(userErr)
+      return {
+        forms: [],
+        tokenUsed: 'page',
+        graphError: `${message} (user token fallback also failed: ${userMessage})`,
+      }
+    }
+  }
+
+  if (!userToken) {
+    return { forms: [], tokenUsed: 'page' }
+  }
+
+  try {
+    const userForms = await getLeadForms(pageId, userToken)
+    if (userForms.length > 0) {
+      return {
+        forms: userForms,
+        tokenUsed: 'user',
+        warning:
+          'Forms fetched using your user token. If you expected more forms, check Leads Access Manager permissions for this Page.',
+      }
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return {
+      forms: [],
+      tokenUsed: 'user',
+      graphError: message,
+      warning:
+        'No forms found. Ensure this Page has Instant Forms in Ads Manager and that your Facebook user has leads access on the Page.',
+    }
+  }
+
+  return {
+    forms: [],
+    tokenUsed: 'page',
+    warning:
+      'No lead forms returned from Meta. Ensure this Page has active Instant Forms and that your user has leads access in Business Settings → Leads Access Manager.',
+  }
 }
 
 /** Fetch the full field data for a specific lead submission. */

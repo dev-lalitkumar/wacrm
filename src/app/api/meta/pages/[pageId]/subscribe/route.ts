@@ -1,25 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, isErrorResponse } from '@/lib/auth/require-role'
-import { decrypt } from '@/lib/encryption'
 import {
   subscribePageToLeadgen,
   unsubscribePageFromLeadgen,
-  getLeadForms,
+  getLeadFormsWithFallback,
 } from '@/lib/meta/facebook-api'
-
-async function getPageToken(
-  supabase: ReturnType<typeof createClient> extends Promise<infer T> ? T : never,
-  pageId: string,
-): Promise<string | null> {
-  const { data } = await supabase
-    .from('facebook_pages')
-    .select('access_token')
-    .eq('id', pageId)
-    .maybeSingle()
-  if (!data?.access_token) return null
-  return decrypt(data.access_token)
-}
+import { getFacebookUserToken, getPageAccessToken } from '@/lib/meta/page-tokens'
+import { upsertLeadForms } from '@/lib/meta/sync-forms'
 
 /**
  * POST /api/meta/pages/[pageId]/subscribe
@@ -37,38 +25,45 @@ export async function POST(
     const { pageId } = await params
     const supabase = await createClient()
 
-    const pageToken = await getPageToken(supabase, pageId)
+    const pageToken = await getPageAccessToken(supabase, pageId)
     if (!pageToken) {
       return NextResponse.json({ error: 'Page not found' }, { status: 404 })
     }
 
     await subscribePageToLeadgen(pageId, pageToken)
 
-    await supabase
+    const { error: pageUpdateErr } = await supabase
       .from('facebook_pages')
-      .update({ is_subscribed: true, subscribed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .update({
+        is_subscribed: true,
+        subscribed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', pageId)
 
-    // Fetch and upsert lead forms for this page
-    const forms = await getLeadForms(pageId, pageToken)
-    if (forms.length > 0) {
-      const formRows = forms.map((f) => ({
-        id: f.id,
-        page_id: pageId,
-        name: f.name,
-        questions: (f.questions ?? []).map((q) => ({
-          key: q.key,
-          label: q.label,
-          type: q.type,
-        })),
-        updated_at: new Date().toISOString(),
-      }))
-      await supabase
-        .from('facebook_lead_forms')
-        .upsert(formRows, { onConflict: 'id', ignoreDuplicates: false })
+    if (pageUpdateErr) {
+      return NextResponse.json({ error: pageUpdateErr.message }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, forms_synced: forms.length })
+    const userToken = await getFacebookUserToken(supabase)
+    const fetchResult = await getLeadFormsWithFallback(pageId, pageToken, userToken)
+
+    let upsertError: string | undefined
+    if (fetchResult.forms.length > 0) {
+      const upsert = await upsertLeadForms(supabase, pageId, fetchResult.forms)
+      if (upsert.error) {
+        upsertError = upsert.error
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      forms_synced: fetchResult.forms.length,
+      token_used: fetchResult.tokenUsed,
+      warning: fetchResult.warning,
+      graph_error: fetchResult.graphError,
+      upsert_error: upsertError,
+    })
   } catch (err) {
     console.error('[meta/pages/subscribe] POST error:', err)
     return NextResponse.json({ error: String(err) }, { status: 500 })
@@ -91,7 +86,7 @@ export async function DELETE(
     const { pageId } = await params
     const supabase = await createClient()
 
-    const pageToken = await getPageToken(supabase, pageId)
+    const pageToken = await getPageAccessToken(supabase, pageId)
     if (!pageToken) {
       return NextResponse.json({ error: 'Page not found' }, { status: 404 })
     }
@@ -100,7 +95,11 @@ export async function DELETE(
 
     await supabase
       .from('facebook_pages')
-      .update({ is_subscribed: false, subscribed_at: null, updated_at: new Date().toISOString() })
+      .update({
+        is_subscribed: false,
+        subscribed_at: null,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', pageId)
 
     return NextResponse.json({ success: true })

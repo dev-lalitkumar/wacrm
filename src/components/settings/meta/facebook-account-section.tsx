@@ -21,6 +21,7 @@ interface Props {
   loading: boolean
   syncing: boolean
   disconnecting: boolean
+  leadCaptureReady?: boolean
   onConnect: () => void
   onDisconnect: () => void
   onSync: () => void
@@ -54,6 +55,7 @@ export function FacebookAccountSection({
   loading,
   syncing,
   disconnecting,
+  leadCaptureReady = false,
   onConnect,
   onDisconnect,
   onSync,
@@ -119,9 +121,23 @@ export function FacebookAccountSection({
                   {config.page_count} page{config.page_count !== 1 ? 's' : ''} available
                 </p>
                 <div className="flex items-center gap-1.5 mt-2 text-xs">
-                  <span className="inline-flex size-2 rounded-full bg-green-400 animate-pulse" />
-                  <span className="text-green-400 font-medium">Lead capture active</span>
-                  <span className="text-slate-500 hidden sm:inline">— page tokens never expire</span>
+                  {leadCaptureReady ? (
+                    <>
+                      <span className="inline-flex size-2 rounded-full bg-green-400 animate-pulse" />
+                      <span className="text-green-400 font-medium">Lead capture ready</span>
+                      <span className="text-slate-500 hidden sm:inline">
+                        — new leads create contacts and deals automatically
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="inline-flex size-2 rounded-full bg-amber-400" />
+                      <span className="text-amber-400 font-medium">Setup incomplete</span>
+                      <span className="text-slate-500 hidden sm:inline">
+                        — subscribe a Page and map phone or email on a form
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

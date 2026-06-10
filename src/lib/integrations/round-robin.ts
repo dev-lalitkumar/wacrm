@@ -1,5 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+/** Non-existent webhook id — forces pick_next_assignee to use the global pool. */
+export const GLOBAL_ROUND_ROBIN_SENTINEL = '00000000-0000-0000-0000-000000000000'
+
 /**
  * Atomically pick the next assignee for a webhook. Delegates to the
  * SECURITY DEFINER SQL function `pick_next_assignee` (migration 015),
@@ -25,4 +28,11 @@ export async function pickNextAssignee(
     return null
   }
   return (data as string | null) ?? null
+}
+
+/** Round-robin from the global Integrations pool (no per-webhook override). */
+export async function pickNextAssigneeFromGlobalPool(
+  supabase: SupabaseClient,
+): Promise<string | null> {
+  return pickNextAssignee(GLOBAL_ROUND_ROBIN_SENTINEL, supabase)
 }

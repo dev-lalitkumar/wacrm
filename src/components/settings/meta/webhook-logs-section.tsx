@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Loader2, RefreshCw, CheckCircle2, XCircle, AlertCircle } from 'lucide-react'
+import Link from 'next/link'
+import { Loader2, RefreshCw, CheckCircle2, XCircle, AlertCircle, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -111,7 +112,8 @@ export function WebhookLogsSection() {
           </div>
         ) : logs.length === 0 ? (
           <div className="py-10 text-center text-sm text-slate-500">
-            No lead events received yet. Subscribe a page to a lead form to start capturing leads.
+            No lead events received yet. Subscribe a page and map phone or email on a form to start
+            capturing leads.
           </div>
         ) : (
           <div className="overflow-hidden rounded-md border border-slate-800">
@@ -122,7 +124,7 @@ export function WebhookLogsSection() {
                   <th className="px-3 py-2.5 text-left font-medium text-slate-400">Status</th>
                   <th className="px-3 py-2.5 text-left font-medium text-slate-400">Contact</th>
                   <th className="px-3 py-2.5 text-left font-medium text-slate-400 hidden md:table-cell">
-                    Lead ID
+                    Records
                   </th>
                   <th className="px-3 py-2.5 text-left font-medium text-slate-400 hidden lg:table-cell">
                     Details
@@ -161,25 +163,46 @@ export function WebhookLogsSection() {
                               <div className="text-xs text-slate-500">{log.contacts.phone}</div>
                             )}
                           </div>
-                        ) : log.status === 'success' ? (
-                          <span className="text-slate-500 text-xs">Contact deleted</span>
+                        ) : log.status === 'success' && log.contact_id ? (
+                          <span className="text-slate-500 text-xs">Contact</span>
                         ) : (
                           <span className="text-slate-600 text-xs">—</span>
                         )}
                       </td>
                       <td className="hidden px-3 py-2.5 md:table-cell">
-                        <code className="text-xs text-slate-500">
-                          {log.leadgen_id.slice(0, 12)}…
-                        </code>
+                        <div className="flex flex-wrap gap-2">
+                          {log.contact_id && (
+                            <Link
+                              href={`/contacts?highlight=${log.contact_id}`}
+                              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                            >
+                              Contact
+                              <ExternalLink className="size-3" />
+                            </Link>
+                          )}
+                          {log.deal_id && (
+                            <Link
+                              href={`/pipelines?deal=${log.deal_id}`}
+                              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                            >
+                              Deal
+                              <ExternalLink className="size-3" />
+                            </Link>
+                          )}
+                        </div>
                       </td>
                       <td className="hidden px-3 py-2.5 lg:table-cell">
                         {log.error_message ? (
-                          <span className="text-xs text-red-400">{log.error_message}</span>
-                        ) : log.deal_id ? (
+                          <span className="text-xs text-amber-400">{log.error_message}</span>
+                        ) : log.status === 'success' ? (
                           <Badge variant="secondary" className="text-xs">
-                            + deal
+                            contact + deal
                           </Badge>
-                        ) : null}
+                        ) : (
+                          <code className="text-xs text-slate-500">
+                            {log.leadgen_id.slice(0, 12)}…
+                          </code>
+                        )}
                       </td>
                     </tr>
                   )

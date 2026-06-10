@@ -3,6 +3,7 @@ import type { FieldData, FieldMapping } from './types'
 import { createContact, type CreateContactInput } from '@/lib/contacts/service'
 import { createDeal } from '@/lib/deals/service'
 import { FIXED_PIPELINE_ID } from '@/lib/pipeline/constants'
+import { pickNextAssigneeFromGlobalPool } from '@/lib/integrations/round-robin'
 import { normalizePhone, phonesMatch } from '@/lib/whatsapp/phone-utils'
 
 export interface ProcessLeadInput {
@@ -20,6 +21,7 @@ export interface ProcessLeadResult {
   errorMessage?: string
   /** true when an existing contact was enriched instead of a new one created */
   deduplicated?: boolean
+  assigneeId?: string | null
 }
 
 const CONTACT_FIELDS = new Set(['name', 'email', 'phone', 'company'])
@@ -31,7 +33,6 @@ export async function processLeadEvent(
 ): Promise<ProcessLeadResult> {
   const { formId, fieldData, sourceId } = input
 
-  // ── 1. Load field mappings ──────────────────────────────────────
   const { data: mappingRows, error: mapErr } = await supabase
     .from('facebook_field_mappings')
     .select('*')
@@ -45,11 +46,9 @@ export async function processLeadEvent(
   const mappingMap = new Map<string, FieldMapping>()
   for (const m of mappings) mappingMap.set(m.fb_field_key, m)
 
-  // ── 2. Map fieldData → contact / deal fields ────────────────────
   const contactFields: Partial<CreateContactInput> & { custom_data?: Record<string, unknown> } = {}
   const dealCustomData: Record<string, unknown> = {}
   const dealStandardFields: Record<string, unknown> = {}
-  let hasDealMapping = false
 
   for (const fd of fieldData) {
     const value = fd.values[0] ?? ''
@@ -65,7 +64,6 @@ export async function processLeadEvent(
         (contactFields as Record<string, unknown>)[mapping.crm_field] = value
       }
     } else if (mapping.crm_object === 'deal') {
-      hasDealMapping = true
       if (mapping.crm_field.startsWith('custom_data.')) {
         const key = mapping.crm_field.slice('custom_data.'.length)
         dealCustomData[key] = value
@@ -89,8 +87,6 @@ export async function processLeadEvent(
     }
   }
 
-  // ── 3. Deduplication — phone fuzzy match then email exact match ──
-  // Mirrors the logic in /api/integrations/webhook/[webhookId]/route.ts
   const normalizedPhone = phone ? normalizePhone(phone) : null
   const normalizedEmail = email ? email.toLowerCase() : null
 
@@ -121,10 +117,11 @@ export async function processLeadEvent(
 
   let contactId: string
   let deduplicated = false
+  let assigneeId: string | null = null
 
   if (existing) {
-    // Enrich existing contact — fill blanks only, never overwrite
     deduplicated = true
+    assigneeId = existing.assigned_to
     const patch: Record<string, unknown> = {}
     if (!existing.name && name) patch.name = name
     if (!existing.phone && normalizedPhone) patch.phone = normalizedPhone
@@ -142,7 +139,7 @@ export async function processLeadEvent(
     }
     contactId = existing.id
   } else {
-    // Create new contact via the central service
+    assigneeId = await pickNextAssigneeFromGlobalPool(supabase)
     try {
       const result = await createContact(supabase, {
         phone: normalizedPhone ?? email ?? '',
@@ -150,6 +147,7 @@ export async function processLeadEvent(
         email: normalizedEmail ?? null,
         company,
         source_id: sourceId,
+        assigned_to: assigneeId,
         custom_data: contactFields.custom_data ?? {},
         user_id: null,
       })
@@ -164,39 +162,63 @@ export async function processLeadEvent(
     }
   }
 
-  // ── 4. Optionally create a deal ──────────────────────────────────
-  let dealId: string | null = null
-  if (hasDealMapping) {
-    const { data: stageRow } = await supabase
-      .from('pipeline_stages')
-      .select('id')
-      .eq('pipeline_id', FIXED_PIPELINE_ID)
-      .order('position', { ascending: true })
-      .limit(1)
-      .maybeSingle()
+  const dealAssignee =
+    assigneeId ?? (await pickNextAssigneeFromGlobalPool(supabase))
 
-    if (stageRow?.id) {
-      try {
-        const dealResult = await createDeal(supabase, {
-          pipeline_id: FIXED_PIPELINE_ID,
-          stage_id: stageRow.id,
-          source_id: sourceId,
-          contact_id: contactId,
-          title: (dealStandardFields.title as string | undefined) ?? null,
-          notes: (dealStandardFields.notes as string | undefined) ?? null,
-          value: dealStandardFields.value ? Number(dealStandardFields.value) : 0,
-          custom_data: dealCustomData,
-          user_id: null,
-          _contactName: name,
-          _contactPhone: normalizedPhone,
-          _fallbackTitle: 'Facebook Lead',
-        })
-        dealId = dealResult.id
-      } catch (err) {
-        console.error('[meta/lead-processor] deal creation failed:', err)
+  let dealId: string | null = null
+  const { data: stageRow } = await supabase
+    .from('pipeline_stages')
+    .select('id')
+    .eq('pipeline_id', FIXED_PIPELINE_ID)
+    .order('position', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (stageRow?.id) {
+    try {
+      const dealResult = await createDeal(supabase, {
+        pipeline_id: FIXED_PIPELINE_ID,
+        stage_id: stageRow.id,
+        source_id: sourceId,
+        contact_id: contactId,
+        title: (dealStandardFields.title as string | undefined) ?? null,
+        notes: (dealStandardFields.notes as string | undefined) ?? null,
+        value: dealStandardFields.value ? Number(dealStandardFields.value) : 0,
+        assigned_to: dealAssignee,
+        custom_data: dealCustomData,
+        user_id: null,
+        _contactName: name,
+        _contactPhone: normalizedPhone,
+        _fallbackTitle: 'Facebook Lead',
+      })
+      dealId = dealResult.id
+    } catch (err) {
+      console.error('[meta/lead-processor] deal creation failed:', err)
+      return {
+        contactId,
+        dealId: null,
+        status: 'error',
+        errorMessage: err instanceof Error ? err.message : 'Deal creation failed',
+        deduplicated,
+        assigneeId: dealAssignee,
       }
+    }
+  } else {
+    return {
+      contactId,
+      dealId: null,
+      status: 'error',
+      errorMessage: 'No pipeline stage found for Facebook leads',
+      deduplicated,
+      assigneeId: dealAssignee,
     }
   }
 
-  return { contactId, dealId, status: 'success', deduplicated }
+  return {
+    contactId,
+    dealId,
+    status: 'success',
+    deduplicated,
+    assigneeId: dealAssignee,
+  }
 }

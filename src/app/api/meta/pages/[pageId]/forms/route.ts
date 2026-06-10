@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, isErrorResponse } from '@/lib/auth/require-role'
-import { decrypt } from '@/lib/encryption'
-import { getLeadForms } from '@/lib/meta/facebook-api'
+import { getLeadFormsWithFallback } from '@/lib/meta/facebook-api'
+import { getFacebookUserToken, getPageAccessToken } from '@/lib/meta/page-tokens'
+import { upsertLeadForms } from '@/lib/meta/sync-forms'
 
 /**
  * GET /api/meta/pages/[pageId]/forms
@@ -21,44 +22,40 @@ export async function GET(
     const { pageId } = await params
     const supabase = await createClient()
 
-    const { data: pageRow } = await supabase
-      .from('facebook_pages')
-      .select('access_token')
-      .eq('id', pageId)
-      .maybeSingle()
-
-    if (!pageRow?.access_token) {
+    const pageToken = await getPageAccessToken(supabase, pageId)
+    if (!pageToken) {
       return NextResponse.json({ error: 'Page not found' }, { status: 404 })
     }
 
-    const pageToken = decrypt(pageRow.access_token)
-    const forms = await getLeadForms(pageId, pageToken)
+    const userToken = await getFacebookUserToken(supabase)
+    const fetchResult = await getLeadFormsWithFallback(pageId, pageToken, userToken)
 
-    if (forms.length > 0) {
-      const formRows = forms.map((f) => ({
-        id: f.id,
-        page_id: pageId,
-        name: f.name,
-        questions: (f.questions ?? []).map((q) => ({
-          key: q.key,
-          label: q.label,
-          type: q.type,
-        })),
-        updated_at: new Date().toISOString(),
-      }))
-      await supabase
-        .from('facebook_lead_forms')
-        .upsert(formRows, { onConflict: 'id', ignoreDuplicates: false })
+    let upsertError: string | undefined
+    if (fetchResult.forms.length > 0) {
+      const upsert = await upsertLeadForms(supabase, pageId, fetchResult.forms)
+      if (upsert.error) {
+        upsertError = upsert.error
+      }
     }
 
-    // Fetch with mapping counts
-    const { data: dbForms } = await supabase
+    const { data: dbForms, error: dbErr } = await supabase
       .from('facebook_lead_forms')
       .select('*, facebook_field_mappings(count)')
       .eq('page_id', pageId)
       .order('name')
 
-    return NextResponse.json({ forms: dbForms ?? [] })
+    if (dbErr) {
+      return NextResponse.json({ error: dbErr.message }, { status: 500 })
+    }
+
+    return NextResponse.json({
+      forms: dbForms ?? [],
+      synced_count: fetchResult.forms.length,
+      token_used: fetchResult.tokenUsed,
+      warning: fetchResult.warning,
+      graph_error: fetchResult.graphError,
+      upsert_error: upsertError,
+    })
   } catch (err) {
     console.error('[meta/pages/forms] error:', err)
     return NextResponse.json({ error: String(err) }, { status: 500 })
