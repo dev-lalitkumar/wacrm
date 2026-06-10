@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/use-auth'
 import {
   canManageWebhooks,
   canRevealWebhookSecret,
+  canViewInboundEvents,
 } from '@/lib/auth/permissions'
 import type { Webhook, WebhookRequest } from '@/types'
 import {
@@ -29,6 +30,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { timeAgo } from '@/lib/utils'
+import { InboundEventsSection } from './inbound-events-section'
 
 interface WebhookDetailDialogProps {
   open: boolean
@@ -64,6 +66,7 @@ export function WebhookDetailDialog({
   const { profile } = useAuth()
   const canManage = canManageWebhooks(profile?.role ?? null)
   const canReveal = canRevealWebhookSecret(profile?.role ?? null)
+  const canViewInbound = canViewInboundEvents(profile?.role ?? null)
 
   const [webhook, setWebhook] = useState<Webhook | null>(null)
   const [requests, setRequests] = useState<WebhookRequest[]>([])
@@ -370,6 +373,13 @@ export function WebhookDetailDialog({
               <pre className="rounded-md border border-slate-700 bg-slate-800/60 px-3 py-2 text-[11px] text-slate-300 font-mono overflow-x-auto whitespace-pre">
                 {curlSample}
               </pre>
+              <p className="text-[11px] text-slate-500">
+                Valid requests return <strong className="text-slate-400">202 Accepted</strong> with{' '}
+                <code className="text-slate-400">{`{ "event_id": "…", "status": "pending" }`}</code>.
+                Contact and deal creation runs asynchronously (usually within one minute).
+                Optional header <code className="text-slate-400">X-Idempotency-Key</code> prevents
+                duplicate processing within 24 hours.
+              </p>
             </section>
 
             {/* ── Mappings (read-only) ────────────────────────── */}
@@ -380,7 +390,16 @@ export function WebhookDetailDialog({
               <MappingsList webhook={webhook} />
             </section>
 
-            {/* ── Recent requests ─────────────────────────────── */}
+            {webhookId && canViewInbound && (
+              <InboundEventsSection
+                sourceRef={webhookId}
+                title="Inbound Event Queue"
+                description="Queued submissions for this webhook (API and public form)."
+                compact
+              />
+            )}
+
+            {/* ── Recent requests (legacy summary) ────────────── */}
             <section className="space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">

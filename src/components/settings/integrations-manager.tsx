@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/use-auth'
 import {
   canManageWebhooks,
   canViewWebhooks,
+  canViewInboundEvents,
   canManageFetchSources,
   canViewFetchSources,
 } from '@/lib/auth/permissions'
@@ -34,12 +35,14 @@ import { WebhookFormDialog } from './webhook-form-dialog'
 import { WebhookDetailDialog } from './webhook-detail-dialog'
 import { FetchSourceFormDialog } from './fetch-source-form-dialog'
 import { FetchSourceDetailDialog } from './fetch-source-detail-dialog'
+import { InboundEventsSection } from './inbound-events-section'
 
 export function IntegrationsManager() {
   const supabase = createClient()
   const { profile } = useAuth()
   const canManage = canManageWebhooks(profile?.role ?? null)
   const canView = canViewWebhooks(profile?.role ?? null)
+  const canViewInbound = canViewInboundEvents(profile?.role ?? null)
   const canManageFetch = canManageFetchSources(profile?.role ?? null)
   const canViewFetch = canViewFetchSources(profile?.role ?? null)
 
@@ -383,6 +386,8 @@ export function IntegrationsManager() {
           </ul>
         )}
       </div>
+
+      {canViewInbound && <InboundEventsSection />}
 
       {/* ── Card 3: Fetch Sources (pull-based ingestion) ──────── */}
       {canViewFetch && (

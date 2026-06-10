@@ -101,10 +101,11 @@ export function MetaSetupChecklist({ connected, pages }: Props) {
 
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
     const { count } = await supabase
-      .from('meta_webhook_logs')
+      .from('inbound_events')
       .select('*', { count: 'exact', head: true })
+      .eq('source_type', 'meta_leadgen')
       .eq('status', 'success')
-      .gte('created_at', since)
+      .gte('received_at', since)
 
     setState({
       subscribedCount: subscribedIds.length,

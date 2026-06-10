@@ -117,6 +117,11 @@ export function canRevealWebhookSecret(role: Role | string | null | undefined) {
   return role === 'admin' || role === 'owner'
 }
 
+/** Mirrors inbound_events RLS (migration 043) — admin + owner only */
+export function canViewInboundEvents(role: Role | string | null | undefined) {
+  return role === 'admin' || role === 'owner'
+}
+
 export function canManageSources(role: Role | string | null | undefined) {
   return role === 'admin'
 }

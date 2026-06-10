@@ -9,6 +9,27 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [Unreleased]
+
+### Added
+
+- **Inbound event queue** for Meta Lead Ads, integration webhooks, and public
+  forms. Every webhook hit is persisted synchronously before the HTTP
+  response; a cron worker (`GET /api/ingest/cron`, every 1 minute on Vercel)
+  processes pending events with retries and full audit in Settings.
+
+### Changed
+
+- Integration webhook and public form endpoints now return **202 Accepted**
+  with `{ event_id, status: "pending" }` instead of **200** with
+  `contact_id`. Processing is asynchronous (typically under one minute).
+
+### Migration required
+
+- Apply `supabase/migrations/043_inbound_events.sql`.
+- Set `AUTOMATION_CRON_SECRET` (reused for ingest cron). On Vercel, add the
+  cron path `/api/ingest/cron` (included in `vercel.json`).
+
 ## [0.2.0] — 2026-05-22
 
 The **Flows** release. Adds a no-code, branching, button-driven WhatsApp
