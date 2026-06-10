@@ -107,23 +107,19 @@ export async function POST(request: Request) {
       )
     }
 
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .limit(1)
-      .single()
-
-    if (configError || !config) {
+    const { getDecryptedWhatsAppCredentials } = await import('@/lib/whatsapp/credentials')
+    const creds = await getDecryptedWhatsAppCredentials()
+    if (!creds?.canMessage) {
       return NextResponse.json(
         {
           error:
             'WhatsApp not configured. Please set up your WhatsApp integration first.',
         },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
-    const accessToken = decrypt(config.access_token)
+    const { config, accessToken, phoneNumberId } = creds
 
     const results: BroadcastResult[] = []
     let sentCount = 0
@@ -151,7 +147,7 @@ export async function POST(request: Request) {
       for (const variant of variants) {
         try {
           const result = await sendTemplateMessage({
-            phoneNumberId: config.phone_number_id,
+            phoneNumberId,
             accessToken,
             to: variant,
             templateName: template_name,

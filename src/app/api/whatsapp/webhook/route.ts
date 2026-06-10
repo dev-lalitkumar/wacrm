@@ -7,6 +7,8 @@ import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchNotification } from '@/lib/notifications/service'
+import { recordWebhookActivity } from '@/lib/whatsapp/onboarding/webhook-progress'
+import { getWhatsAppConfig } from '@/lib/whatsapp/onboarding/repository'
 
 // Lazy-initialized to avoid build-time crash when env vars are missing
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -89,54 +91,36 @@ export async function GET(request: Request) {
       )
     }
 
-    // Fetch all whatsapp configs to check verify tokens
-    const { data: configs, error: configError } = await supabaseAdmin()
-      .from('whatsapp_config')
-      .select('id, verify_token')
-
-    if (configError || !configs) {
-      console.error('Error fetching configs for verification:', configError)
-      return NextResponse.json(
-        { error: 'Verification failed' },
-        { status: 403 }
-      )
+    const envToken = process.env.META_WEBHOOK_VERIFY_TOKEN
+    if (envToken && verifyToken === envToken) {
+      return new Response(challenge, {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain' },
+      })
     }
 
-    // Check if any config's verify_token matches. Also collect the
-    // matching row so we can opportunistically upgrade its token to
-    // GCM if it was still in the legacy CBC format.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let matchedConfig: any = null
-    for (const config of configs) {
-      if (!config.verify_token) continue
+    const waConfig = await getWhatsAppConfig(supabaseAdmin())
+    let matchedVerify = false
+    if (waConfig?.verify_token) {
       try {
-        if (decrypt(config.verify_token) === verifyToken) {
-          matchedConfig = config
-          break
+        matchedVerify = decrypt(waConfig.verify_token) === verifyToken
+        if (matchedVerify && isLegacyFormat(waConfig.verify_token)) {
+          void supabaseAdmin()
+            .from('whatsapp_config')
+            .update({ verify_token: encrypt(verifyToken) })
+            .eq('id', 1)
+            .then(({ error }: { error: unknown }) => {
+              if (error) {
+                console.warn('[webhook] verify_token GCM upgrade failed:', error)
+              }
+            })
         }
       } catch {
-        // Malformed / wrong-key token row — skip it and keep checking.
+        matchedVerify = false
       }
     }
 
-    if (matchedConfig) {
-      // Fire-and-forget GCM upgrade. Safe to run on every subscribe
-      // since it's a no-op once the column is already GCM.
-      if (isLegacyFormat(matchedConfig.verify_token)) {
-        void supabaseAdmin()
-          .from('whatsapp_config')
-          .update({ verify_token: encrypt(verifyToken) })
-          .eq('id', matchedConfig.id)
-          .then(({ error }: { error: unknown }) => {
-            if (error) {
-              console.warn(
-                '[webhook] verify_token GCM upgrade failed:',
-                (error as { message?: string })?.message ?? error,
-              )
-            }
-          })
-      }
-      // Return challenge as plain text
+    if (matchedVerify) {
       return new Response(challenge, {
         status: 200,
         headers: { 'Content-Type': 'text/plain' },
@@ -193,31 +177,49 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
     for (const change of entry.changes) {
       const value = change.value
 
-      // Handle status updates
-      if (value.statuses) {
+      const phoneNumberId = value.metadata?.phone_number_id
+
+      if (value.statuses && phoneNumberId) {
         for (const status of value.statuses) {
           await handleStatusUpdate(status)
+          void recordWebhookActivity({
+            phoneNumberId,
+            kind: 'outbound_status',
+            messageId: status.id,
+            status: status.status,
+          })
         }
       }
 
-      // Handle incoming messages
-      if (!value.messages || !value.contacts) continue
+      if (!value.messages || !value.contacts || !phoneNumberId) continue
 
-      const phoneNumberId = value.metadata.phone_number_id
-
-      // Find user's config by phone_number_id
-      const { data: config, error: configError } = await supabaseAdmin()
-        .from('whatsapp_config')
-        .select('*')
-        .eq('phone_number_id', phoneNumberId)
-        .single()
-
-      if (configError || !config) {
+      const config = await getWhatsAppConfig(supabaseAdmin())
+      if (!config || config.phone_number_id !== phoneNumberId || !config.access_token) {
         console.error('No config found for phone_number_id:', phoneNumberId)
         continue
       }
 
       const decryptedAccessToken = decrypt(config.access_token)
+
+      void recordWebhookActivity({
+        phoneNumberId,
+        kind: 'inbound',
+      })
+
+      let ownerUserId: string | null = null
+      if (config.created_by) {
+        const { data: ownerProfile } = await supabaseAdmin()
+          .from('profiles')
+          .select('user_id')
+          .eq('id', config.created_by)
+          .maybeSingle()
+        ownerUserId = ownerProfile?.user_id ?? null
+      }
+
+      if (!ownerUserId) {
+        console.error('WhatsApp config missing created_by profile')
+        continue
+      }
 
       for (let i = 0; i < value.messages.length; i++) {
         const message = value.messages[i]
@@ -226,7 +228,7 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
         await processMessage(
           message,
           contact,
-          config.user_id,
+          ownerUserId,
           decryptedAccessToken
         )
       }

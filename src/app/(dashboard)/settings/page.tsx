@@ -21,7 +21,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
+import { WhatsAppSettings } from '@/components/settings/whatsapp-settings';
 import { TemplateManager } from '@/components/settings/template-manager';
 import { TagManager } from '@/components/settings/tag-manager';
 import { ProfileForm } from '@/components/settings/profile-form';
@@ -336,7 +336,7 @@ export default function SettingsPage() {
           )}
 
           <TabsContent value="whatsapp">
-            <WhatsAppConfig />
+            <WhatsAppSettings />
           </TabsContent>
 
           {showEmail && (

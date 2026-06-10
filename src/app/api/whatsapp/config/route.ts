@@ -1,206 +1,116 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { verifyPhoneNumber } from '@/lib/whatsapp/meta-api'
-import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { requireRole, isErrorResponse } from '@/lib/auth/require-role'
+import { verifyPhoneNumber } from '@/lib/whatsapp/meta-api'
+import { getDecryptedWhatsAppCredentials } from '@/lib/whatsapp/credentials'
+import { upsertCredentials } from '@/lib/whatsapp/onboarding/repository'
+import { scheduleOnboardingPipeline } from '@/lib/whatsapp/onboarding/schedule'
+import { disconnectWhatsApp } from '@/lib/whatsapp/onboarding/repository'
 
 /**
  * GET /api/whatsapp/config
  *
- * Reads the org-wide WhatsApp config row (singleton) and verifies
- * its tokens against Meta. Any signed-in member can call this so
- * the inbox can render the connected banner; writes are admin/owner.
+ * Verifies stored credentials against Meta. Any signed-in member can call.
  */
 export async function GET() {
   try {
-    const supabase = await createClient()
+    const creds = await getDecryptedWhatsAppCredentials()
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('phone_number_id, access_token, status')
-      .limit(1)
-      .maybeSingle()
-
-    if (configError) {
-      console.error('Error fetching whatsapp_config:', configError)
-      return NextResponse.json(
-        { connected: false, reason: 'db_error', message: 'Failed to fetch configuration' },
-        { status: 200 }
-      )
-    }
-
-    if (!config) {
-      return NextResponse.json(
-        {
-          connected: false,
-          reason: 'no_config',
-          message: 'No WhatsApp configuration saved yet. Fill in the form and click Save Configuration.',
-        },
-        { status: 200 }
-      )
-    }
-
-    let accessToken: string
-    try {
-      accessToken = decrypt(config.access_token)
-    } catch (err) {
-      console.error('[whatsapp/config GET] Token decryption failed:', err)
-      return NextResponse.json(
-        {
-          connected: false,
-          reason: 'token_corrupted',
-          needs_reset: true,
-          message:
-            'The stored access token cannot be decrypted with the current ENCRYPTION_KEY. This usually means the key changed, or it differs between environments (local vs Hostinger vs Vercel). Click "Reset Configuration" below, then re-save.',
-        },
-        { status: 200 }
-      )
+    if (!creds) {
+      return NextResponse.json({
+        connected: false,
+        reason: 'no_config',
+        message: 'No WhatsApp configuration saved yet.',
+        is_ready: false,
+        onboarding_status: 'NOT_CONNECTED',
+      })
     }
 
     try {
       const phoneInfo = await verifyPhoneNumber({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
+        phoneNumberId: creds.phoneNumberId,
+        accessToken: creds.accessToken,
       })
-      return NextResponse.json({ connected: true, phone_info: phoneInfo })
+      return NextResponse.json({
+        connected: true,
+        is_ready: creds.isReady,
+        onboarding_status: creds.config.status,
+        phone_info: phoneInfo,
+        setup_warning: !creds.isReady
+          ? 'WhatsApp credentials work but onboarding is not complete. Check Settings → WhatsApp Setup.'
+          : null,
+      })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown Meta API error'
-      console.error('[whatsapp/config GET] Meta API verification failed:', message)
-      return NextResponse.json(
-        {
-          connected: false,
-          reason: 'meta_api_error',
-          message: `Meta API rejected the credentials: ${message}`,
-        },
-        { status: 200 }
-      )
+      return NextResponse.json({
+        connected: false,
+        reason: 'meta_api_error',
+        message: `Meta API rejected the credentials: ${message}`,
+        is_ready: false,
+        onboarding_status: creds.config.status,
+      })
     }
   } catch (error) {
     console.error('Error in WhatsApp config GET:', error)
     return NextResponse.json(
       { connected: false, reason: 'unknown', message: 'Internal server error' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }
 
 /**
- * POST /api/whatsapp/config
- *
- * Saves or updates the org-wide WhatsApp config. Admin / Owner only.
- * Verifies credentials with Meta first, then encrypts and stores.
+ * POST /api/whatsapp/config — manual credential entry, starts verification pipeline.
  */
 export async function POST(request: Request) {
   try {
     const caller = await requireRole(['admin', 'owner'])
     if (isErrorResponse(caller)) return caller
 
-    const supabase = await createClient()
-
     const body = await request.json()
-    const { phone_number_id, waba_id, access_token, verify_token } = body
+    const {
+      phone_number_id,
+      waba_id,
+      access_token,
+      verify_token,
+      onboarding_test_phone,
+    } = body
 
-    if (!access_token || !phone_number_id) {
+    if (!access_token || !phone_number_id || !onboarding_test_phone?.trim()) {
       return NextResponse.json(
-        { error: 'access_token and phone_number_id are required' },
-        { status: 400 }
+        { error: 'access_token, phone_number_id, and onboarding_test_phone are required' },
+        { status: 400 },
       )
     }
 
-    let phoneInfo
     try {
-      phoneInfo = await verifyPhoneNumber({
-        phoneNumberId: phone_number_id,
-        accessToken: access_token,
-      })
+      await verifyPhoneNumber({ phoneNumberId: phone_number_id, accessToken: access_token })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown Meta API error'
-      console.error('Meta API verification failed during save:', message)
-      return NextResponse.json(
-        { error: `Meta API error: ${message}` },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: `Meta API error: ${message}` }, { status: 400 })
     }
 
-    let encryptedAccessToken: string
-    let encryptedVerifyToken: string | null
-    try {
-      encryptedAccessToken = encrypt(access_token)
-      encryptedVerifyToken = verify_token ? encrypt(verify_token) : null
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown encryption error'
-      console.error('Encryption failed:', message)
-      return NextResponse.json(
-        {
-          error:
-            'Failed to encrypt token. Check that ENCRYPTION_KEY is a valid 64-character hex string in your environment variables.',
-        },
-        { status: 500 }
-      )
+    const saved = await upsertCredentials({
+      phone_number_id,
+      waba_id: waba_id || '',
+      access_token,
+      verify_token: verify_token || null,
+      onboarding_test_phone: onboarding_test_phone.trim(),
+      connection_type: 'manual',
+      created_by: caller.profileId,
+    })
+
+    if (!saved) {
+      return NextResponse.json({ error: 'Failed to save configuration' }, { status: 500 })
     }
 
-    // Singleton row — at most one config in the org. Find it by id
-    // (not by user_id) so an Owner can update the row the original
-    // Admin created.
-    const { data: existing } = await supabase
-      .from('whatsapp_config')
-      .select('id')
-      .limit(1)
-      .maybeSingle()
+    scheduleOnboardingPipeline()
 
-    if (existing) {
-      const { error: updateError } = await supabase
-        .from('whatsapp_config')
-        .update({
-          phone_number_id,
-          waba_id: waba_id || null,
-          access_token: encryptedAccessToken,
-          verify_token: encryptedVerifyToken,
-          status: 'connected',
-          connected_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existing.id)
-
-      if (updateError) {
-        console.error('Error updating whatsapp_config:', updateError)
-        return NextResponse.json(
-          { error: 'Failed to update configuration' },
-          { status: 500 }
-        )
-      }
-    } else {
-      const { error: insertError } = await supabase
-        .from('whatsapp_config')
-        .insert({
-          user_id: caller.userId,
-          phone_number_id,
-          waba_id: waba_id || null,
-          access_token: encryptedAccessToken,
-          verify_token: encryptedVerifyToken,
-          status: 'connected',
-          connected_at: new Date().toISOString(),
-        })
-
-      if (insertError) {
-        console.error('Error inserting whatsapp_config:', insertError)
-        return NextResponse.json(
-          { error: 'Failed to save configuration' },
-          { status: 500 }
-        )
-      }
-    }
-
-    return NextResponse.json({ success: true, phone_info: phoneInfo })
+    return NextResponse.json({
+      success: true,
+      status: saved.status,
+      onboarding_step: saved.onboarding_step,
+      message: 'Credentials saved. Verification pipeline started.',
+    })
   } catch (error) {
     console.error('Error in WhatsApp config POST:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -208,40 +118,14 @@ export async function POST(request: Request) {
 }
 
 /**
- * DELETE /api/whatsapp/config
- *
- * Removes the org-wide WhatsApp configuration. Admin / Owner only.
+ * DELETE /api/whatsapp/config — disconnect (soft).
  */
 export async function DELETE() {
   try {
     const caller = await requireRole(['admin', 'owner'])
     if (isErrorResponse(caller)) return caller
 
-    const supabase = await createClient()
-
-    const { data: existing } = await supabase
-      .from('whatsapp_config')
-      .select('id')
-      .limit(1)
-      .maybeSingle()
-
-    if (!existing) {
-      return NextResponse.json({ success: true })
-    }
-
-    const { error: deleteError } = await supabase
-      .from('whatsapp_config')
-      .delete()
-      .eq('id', existing.id)
-
-    if (deleteError) {
-      console.error('Error deleting whatsapp_config:', deleteError)
-      return NextResponse.json(
-        { error: 'Failed to delete configuration' },
-        { status: 500 }
-      )
-    }
-
+    await disconnectWhatsApp()
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error in WhatsApp config DELETE:', error)

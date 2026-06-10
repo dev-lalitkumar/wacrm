@@ -282,17 +282,6 @@ export interface EmailNotification {
   contact?: Contact;
 }
 
-export interface WhatsAppConfig {
-  id: string;
-  user_id: string;
-  phone_number_id: string;
-  waba_id?: string;
-  access_token: string;
-  verify_token?: string;
-  status: 'connected' | 'disconnected';
-  connected_at?: string;
-}
-
 export interface MessageTemplate {
   id: string;
   user_id: string;

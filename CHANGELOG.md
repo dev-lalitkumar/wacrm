@@ -13,12 +13,17 @@ and polish.
 
 ### Added
 
+- **WhatsApp Coexistence onboarding** with deterministic state machine
+  (`whatsapp_config` singleton), verification pipeline (assets, permissions,
+  coexistence, webhook, test message), setup wizard UI, health dashboard,
+  reverify/disconnect APIs, and external health cron endpoints.
+
+### Changed
+
 - **Inbound event queue** for Meta Lead Ads, integration webhooks, and public
   forms. Every webhook hit is persisted synchronously before the HTTP
   response; processing runs immediately via Next.js `after()` (works on
   Vercel Hobby). `GET /api/ingest/cron` remains a backup drain with retries.
-
-### Changed
 
 - Integration webhook and public form endpoints now return **202 Accepted**
   with `{ event_id, status: "pending" }` instead of **200** with
@@ -26,7 +31,8 @@ and polish.
 
 ### Migration required
 
-- Apply `supabase/migrations/043_inbound_events.sql`.
+- Apply `supabase/migrations/043_inbound_events.sql` and
+  `044_whatsapp_config.sql` (replaces legacy per-user `whatsapp_config` with singleton onboarding schema).
 - **Vercel Hobby:** no Vercel Cron needed — `after()` processes events on
   each webhook hit. Optionally set `AUTOMATION_CRON_SECRET` and ping
   `GET /api/ingest/cron` every 5–15 min from [cron-job.org](https://cron-job.org)

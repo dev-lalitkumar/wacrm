@@ -27,14 +27,14 @@ import {
   AccordionTrigger,
   AccordionContent,
 } from '@/components/ui/accordion';
-import type { WhatsAppConfig as WhatsAppConfigType } from '@/types';
+import type { WhatsAppConfig as WhatsAppConfigType } from '@/lib/whatsapp/onboarding/types';
 
 const MASKED_TOKEN = '••••••••••••••••';
 
 type ConnectionStatus = 'connected' | 'disconnected' | 'unknown';
 type ResetReason = 'token_corrupted' | 'meta_api_error' | null;
 
-export function WhatsAppConfig() {
+export function WhatsAppConfig({ onChanged }: { onChanged?: () => void }) {
   const supabase = createClient();
   const { user, loading: authLoading } = useAuth();
 
@@ -52,6 +52,7 @@ export function WhatsAppConfig() {
   const [wabaId, setWabaId] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [verifyToken, setVerifyToken] = useState('');
+  const [onboardingTestPhone, setOnboardingTestPhone] = useState('');
   const [tokenEdited, setTokenEdited] = useState(false);
 
   const webhookUrl =
@@ -62,11 +63,11 @@ export function WhatsAppConfig() {
   const fetchConfig = useCallback(async () => {
     setLoading(true);
     try {
-      // Org-wide singleton config — RLS lets every active member read.
+      // Workspace singleton config — RLS lets every active member read.
       const { data, error } = await supabase
         .from('whatsapp_config')
         .select('*')
-        .limit(1)
+        .eq('id', 1)
         .maybeSingle();
 
       if (error) {
@@ -77,6 +78,7 @@ export function WhatsAppConfig() {
         setConfig(data);
         setPhoneNumberId(data.phone_number_id || '');
         setWabaId(data.waba_id || '');
+        setOnboardingTestPhone(data.onboarding_test_phone || '');
         setAccessToken(MASKED_TOKEN);
         setVerifyToken('');
         setTokenEdited(false);
@@ -139,6 +141,10 @@ export function WhatsAppConfig() {
       toast.error('Access Token is required for initial setup');
       return;
     }
+    if (!onboardingTestPhone.trim()) {
+      toast.error('Test phone number (E.164) is required');
+      return;
+    }
 
     try {
       setSaving(true);
@@ -151,6 +157,7 @@ export function WhatsAppConfig() {
         phone_number_id: phoneNumberId.trim(),
         waba_id: wabaId.trim() || null,
         verify_token: verifyToken.trim() || null,
+        onboarding_test_phone: onboardingTestPhone.trim(),
       };
 
       if (tokenEdited && accessToken !== MASKED_TOKEN && accessToken.trim()) {
@@ -179,13 +186,10 @@ export function WhatsAppConfig() {
         return;
       }
 
-      toast.success(
-        data.phone_info?.verified_name
-          ? `Connected to ${data.phone_info.verified_name}`
-          : 'Configuration saved successfully'
-      );
+      toast.success(data.message ?? 'Configuration saved — verification started');
 
       if (user) await fetchConfig();
+      onChanged?.();
     } catch (err) {
       console.error('Save error:', err);
       toast.error('Failed to save configuration');
@@ -358,6 +362,19 @@ export function WhatsAppConfig() {
                 onChange={(e) => setWabaId(e.target.value)}
                 className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-slate-300">Test phone number (E.164)</Label>
+              <Input
+                placeholder="+15551234567"
+                value={onboardingTestPhone}
+                onChange={(e) => setOnboardingTestPhone(e.target.value)}
+                className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
+              />
+              <p className="text-xs text-slate-500">
+                Used for the onboarding test message during setup verification.
+              </p>
             </div>
 
             <div className="space-y-2">

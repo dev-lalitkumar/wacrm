@@ -557,3 +557,89 @@ export async function downloadMedia(
   const buffer = Buffer.from(await response.arrayBuffer())
   return { buffer, contentType }
 }
+
+// ============================================================
+// Onboarding / WABA management
+// ============================================================
+
+export interface WabaInfo {
+  id: string
+  name?: string
+  owner_business_info?: { id?: string; name?: string }
+}
+
+export async function getWaba(args: {
+  wabaId: string
+  accessToken: string
+}): Promise<WabaInfo> {
+  const url = `${META_API_BASE}/${args.wabaId}?fields=id,name,owner_business_info`
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${args.accessToken}` },
+  })
+  if (!response.ok) await throwMetaError(response, 'Failed to fetch WABA')
+  return response.json()
+}
+
+export interface PhoneDetails {
+  id: string
+  display_phone_number?: string
+  verified_name?: string
+  quality_rating?: string
+  messaging_limit_tier?: string
+  platform_type?: string
+  is_on_biz_app?: boolean
+  code_verification_status?: string
+}
+
+export async function getPhoneNumberDetails(args: {
+  phoneNumberId: string
+  accessToken: string
+}): Promise<PhoneDetails> {
+  const fields =
+    'id,display_phone_number,verified_name,quality_rating,messaging_limit_tier,platform_type,is_on_biz_app,code_verification_status'
+  const url = `${META_API_BASE}/${args.phoneNumberId}?fields=${fields}`
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${args.accessToken}` },
+  })
+  if (!response.ok) await throwMetaError(response, 'Failed to fetch phone number')
+  return response.json()
+}
+
+export interface TokenDebugInfo {
+  type?: string
+  expires_at?: number
+  scopes?: string[]
+  data?: { scopes?: string[] }
+}
+
+export async function debugAccessToken(inputToken: string): Promise<TokenDebugInfo> {
+  const appId = process.env.META_APP_ID
+  const appSecret = process.env.META_APP_SECRET
+  if (!appId || !appSecret) {
+    throw new Error('META_APP_ID and META_APP_SECRET are required for token debug')
+  }
+  const appToken = `${appId}|${appSecret}`
+  const url = `${META_API_BASE}/debug_token?input_token=${encodeURIComponent(inputToken)}&access_token=${encodeURIComponent(appToken)}`
+  const response = await fetch(url)
+  if (!response.ok) await throwMetaError(response, 'Token debug failed')
+  const body = (await response.json()) as { data?: TokenDebugInfo }
+  return body.data ?? {}
+}
+
+export async function subscribeWabaWebhooks(args: {
+  wabaId: string
+  accessToken: string
+}): Promise<void> {
+  const url = `${META_API_BASE}/${args.wabaId}/subscribed_apps`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${args.accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      subscribed_fields: ['messages', 'message_template_status_update'],
+    }),
+  })
+  if (!response.ok) await throwMetaError(response, 'WABA webhook subscription failed')
+}

@@ -122,17 +122,15 @@ export async function POST(
       if (!phone) return NextResponse.json({ error: 'Contact has no phone number' }, { status: 400 })
       recipient = phone
 
-      const { data: waConfig } = await supabase
-        .from('whatsapp_config')
-        .select('phone_number_id, access_token, status')
-        .eq('status', 'connected')
-        .maybeSingle()
-
-      if (!waConfig) return NextResponse.json({ error: 'WhatsApp is not configured' }, { status: 400 })
+      const { getDecryptedWhatsAppCredentials } = await import('@/lib/whatsapp/credentials')
+      const creds = await getDecryptedWhatsAppCredentials()
+      if (!creds?.canMessage) {
+        return NextResponse.json({ error: 'WhatsApp is not configured' }, { status: 400 })
+      }
 
       await sendTextMessage({
-        phoneNumberId: waConfig.phone_number_id,
-        accessToken: waConfig.access_token,
+        phoneNumberId: creds.phoneNumberId,
+        accessToken: creds.accessToken,
         to: phone,
         text: messageBody,
       })

@@ -1,33 +1,29 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { requireRole, isErrorResponse } from '@/lib/auth/require-role'
+import { getWhatsAppConfig } from '@/lib/whatsapp/onboarding/repository'
 
 /**
  * GET /api/meta/whatsapp/status
  *
- * Returns the WhatsApp configuration status for coexistence display.
- * Only returns phone_number_id and waba_id (never exposes access token).
+ * Legacy shim — prefer GET /api/whatsapp/onboarding-status.
  */
 export async function GET() {
   try {
     const caller = await requireRole(['admin', 'owner'])
     if (isErrorResponse(caller)) return caller
 
-    const supabase = await createClient()
-    const { data } = await supabase
-      .from('whatsapp_config')
-      .select('phone_number_id, waba_id, status')
-      .eq('user_id', caller.userId)
-      .maybeSingle()
-
-    if (!data || data.status !== 'connected') {
-      return NextResponse.json({ connected: false, phone_number_id: null, waba_id: null })
-    }
+    const config = await getWhatsAppConfig()
+    const connected =
+      !!config?.phone_number_id &&
+      config.is_active &&
+      (config.status === 'READY' || config.status === 'EMBEDDED_SIGNUP_COMPLETED')
 
     return NextResponse.json({
-      connected: true,
-      phone_number_id: data.phone_number_id,
-      waba_id: data.waba_id ?? null,
+      connected,
+      phone_number_id: config?.phone_number_id ?? null,
+      waba_id: config?.waba_id ?? null,
+      status: config?.status ?? 'NOT_CONNECTED',
+      is_ready: config?.status === 'READY',
     })
   } catch (err) {
     console.error('[meta/whatsapp/status] error:', err)

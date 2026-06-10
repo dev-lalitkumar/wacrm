@@ -97,13 +97,9 @@ export async function POST() {
     }
 
     // Org-wide WhatsApp config singleton — holds waba_id + token.
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .limit(1)
-      .single()
-
-    if (configError || !config) {
+    const { getDecryptedWhatsAppCredentials } = await import('@/lib/whatsapp/credentials')
+    const creds = await getDecryptedWhatsAppCredentials()
+    if (!creds?.canMessage) {
       return NextResponse.json(
         {
           error:
@@ -112,6 +108,8 @@ export async function POST() {
         { status: 400 },
       )
     }
+
+    const { config, accessToken } = creds
 
     if (!config.waba_id) {
       return NextResponse.json(
@@ -123,7 +121,7 @@ export async function POST() {
       )
     }
 
-    const accessToken = decrypt(config.access_token)
+    // accessToken from getDecryptedWhatsAppCredentials above
 
     // Paginate through every template Meta has for this WABA. Meta
     // returns at most 100 per page; `paging.next` is a full URL. Cap

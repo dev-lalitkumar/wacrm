@@ -69,21 +69,18 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .limit(1)
-    .single()
-  if (configErr || !config) {
+  const { getDecryptedWhatsAppCredentials } = await import('@/lib/whatsapp/credentials')
+  const creds = await getDecryptedWhatsAppCredentials()
+  if (!creds?.canMessage) {
     throw new Error('WhatsApp not configured')
   }
 
-  const accessToken = decrypt(config.access_token)
+  const { accessToken, phoneNumberId } = creds
 
   const attempt = async (phone: string): Promise<string> => {
     if (input.kind === 'template') {
       const r = await sendTemplateMessage({
-        phoneNumberId: config.phone_number_id,
+        phoneNumberId,
         accessToken,
         to: phone,
         templateName: input.templateName,
@@ -93,7 +90,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
       return r.messageId
     }
     const r = await sendTextMessage({
-      phoneNumberId: config.phone_number_id,
+      phoneNumberId,
       accessToken,
       to: phone,
       text: input.text,

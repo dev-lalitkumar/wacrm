@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp/meta-api'
-import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
+import { encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
+import { getDecryptedWhatsAppCredentials } from '@/lib/whatsapp/credentials'
+import { updateWhatsAppConfig } from '@/lib/whatsapp/onboarding/repository'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import {
   sanitizePhoneForMeta,
@@ -102,40 +104,18 @@ export async function POST(request: Request) {
       )
     }
 
-    // Fetch and decrypt the org-wide WhatsApp config (singleton).
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .limit(1)
-      .single()
-
-    if (configError || !config) {
+    const creds = await getDecryptedWhatsAppCredentials()
+    if (!creds?.canMessage) {
       return NextResponse.json(
         { error: 'WhatsApp not configured. Please set up your WhatsApp integration first.' },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
-    const accessToken = decrypt(config.access_token)
+    const { config, accessToken, phoneNumberId: phone_number_id } = creds
 
-    // Self-heal legacy CBC-encrypted tokens. Fire-and-forget: we
-    // return from the send without waiting, so a failed upgrade just
-    // means the next send tries again. The upgrade is idempotent —
-    // concurrent sends both produce valid GCM ciphertexts of the same
-    // plaintext, last write wins.
-    if (isLegacyFormat(config.access_token)) {
-      void supabase
-        .from('whatsapp_config')
-        .update({ access_token: encrypt(accessToken) })
-        .eq('id', config.id)
-        .then(({ error }) => {
-          if (error) {
-            console.warn(
-              '[whatsapp/send] access_token GCM upgrade failed:',
-              error.message,
-            )
-          }
-        })
+    if (isLegacyFormat(config.access_token!)) {
+      void updateWhatsAppConfig({ access_token: encrypt(accessToken) })
     }
 
     // Resolve the reply target (if any) to its Meta message_id, which is
@@ -180,7 +160,7 @@ export async function POST(request: Request) {
     const attempt = async (phone: string): Promise<string> => {
       if (message_type === 'template') {
         const result = await sendTemplateMessage({
-          phoneNumberId: config.phone_number_id,
+          phoneNumberId: phone_number_id,
           accessToken,
           to: phone,
           templateName: template_name,
@@ -190,7 +170,7 @@ export async function POST(request: Request) {
         return result.messageId
       }
       const result = await sendTextMessage({
-        phoneNumberId: config.phone_number_id,
+        phoneNumberId: phone_number_id,
         accessToken,
         to: phone,
         text: content_text,

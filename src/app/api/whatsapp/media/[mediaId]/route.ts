@@ -32,20 +32,16 @@ export async function GET(
     }
 
     // Fetch and decrypt WhatsApp config
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .limit(1)
-      .single()
-
-    if (configError || !config) {
+    const { getDecryptedWhatsAppCredentials } = await import('@/lib/whatsapp/credentials')
+    const creds = await getDecryptedWhatsAppCredentials()
+    if (!creds?.canMessage) {
       return NextResponse.json(
         { error: 'WhatsApp not configured' },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
-    const accessToken = decrypt(config.access_token)
+    const { accessToken } = creds
 
     // Get the download URL from Meta
     const mediaInfo = await getMediaUrl({ mediaId, accessToken })

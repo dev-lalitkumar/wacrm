@@ -94,25 +94,21 @@ export async function POST(request: Request) {
     }
 
     // Org-wide WhatsApp config singleton.
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('phone_number_id, access_token')
-      .limit(1)
-      .single();
-
-    if (configError || !config) {
+    const { getDecryptedWhatsAppCredentials } = await import('@/lib/whatsapp/credentials');
+    const creds = await getDecryptedWhatsAppCredentials();
+    if (!creds?.canMessage) {
       return NextResponse.json(
         { error: 'WhatsApp not configured.' },
         { status: 400 },
       );
     }
 
-    const accessToken = decrypt(config.access_token);
+    const { accessToken, phoneNumberId } = creds;
     const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
 
     try {
       await sendReactionMessage({
-        phoneNumberId: config.phone_number_id,
+        phoneNumberId,
         accessToken,
         to: sanitizedPhone,
         targetMessageId: targetMessage.message_id,

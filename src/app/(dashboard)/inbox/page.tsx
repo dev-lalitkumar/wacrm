@@ -27,6 +27,7 @@ export default function InboxPage() {
     useState<Conversation | null>(null);
   const [activeContact, setActiveContact] = useState<Contact | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [whatsappSetupWarning, setWhatsappSetupWarning] = useState<string | null>(null);
   const [whatsappConnected, setWhatsappConnected] = useState<boolean | null>(
     null
   );
@@ -132,15 +133,23 @@ export default function InboxPage() {
 
       if (!user) return;
 
-      // Org-wide singleton config — RLS lets every active member
-      // read it. We just need any (and the only) row.
+      // Workspace singleton config — RLS lets every active member
+      // read it. We just need the single row.
       const { data } = await supabase
         .from("whatsapp_config")
-        .select("status")
-        .limit(1)
+        .select("status, is_active, phone_number_id")
+        .eq("id", 1)
         .maybeSingle();
 
-      setWhatsappConnected(data?.status === "connected");
+      const hasCreds = !!data?.is_active && !!data?.phone_number_id;
+      setWhatsappConnected(hasCreds);
+      if (hasCreds && data?.status !== "READY") {
+        setWhatsappSetupWarning(
+          "WhatsApp setup is incomplete. Messages may work, but finish verification in Settings → WhatsApp.",
+        );
+      } else {
+        setWhatsappSetupWarning(null);
+      }
     };
 
     checkConnection();
@@ -505,6 +514,11 @@ export default function InboxPage() {
           <p className="text-xs text-amber-400">
             WhatsApp® is not connected. Go to Settings to connect your account.
           </p>
+        </div>
+      )}
+      {whatsappSetupWarning && (
+        <div className="flex shrink-0 items-center justify-center gap-2 border-b border-amber-500/20 bg-amber-500/10 px-4 py-2">
+          <p className="text-xs text-amber-400">{whatsappSetupWarning}</p>
         </div>
       )}
 

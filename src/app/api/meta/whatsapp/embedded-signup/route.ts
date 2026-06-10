@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { requireRole, isErrorResponse } from '@/lib/auth/require-role'
-import { encrypt } from '@/lib/encryption'
+import { upsertCredentials } from '@/lib/whatsapp/onboarding/repository'
+import { scheduleOnboardingPipeline } from '@/lib/whatsapp/onboarding/schedule'
 
 /**
  * POST /api/meta/whatsapp/embedded-signup
  *
- * Stores the WABA and phone number IDs obtained from the WhatsApp
- * Embedded Signup flow. Updates the existing whatsapp_config row.
- *
- * Body: { phone_number_id: string, waba_id: string, access_token: string }
+ * Stores embedded signup credentials and starts the verification pipeline.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -20,6 +17,7 @@ export async function POST(req: NextRequest) {
       phone_number_id?: string
       waba_id?: string
       access_token?: string
+      onboarding_test_phone?: string
     }
 
     if (!body.phone_number_id || !body.waba_id || !body.access_token) {
@@ -29,51 +27,33 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const supabase = await createClient()
-
-    // Check if a whatsapp_config row exists for this user
-    const { data: existing } = await supabase
-      .from('whatsapp_config')
-      .select('id')
-      .eq('user_id', caller.userId)
-      .maybeSingle()
-
-    const encryptedToken = encrypt(body.access_token)
-
-    if (existing) {
-      const { error } = await supabase
-        .from('whatsapp_config')
-        .update({
-          phone_number_id: body.phone_number_id,
-          waba_id: body.waba_id,
-          access_token: encryptedToken,
-          status: 'connected',
-          connected_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('user_id', caller.userId)
-
-      if (error) {
-        console.error('[meta/whatsapp/embedded-signup] update error:', error)
-        return NextResponse.json({ error: 'Failed to save configuration' }, { status: 500 })
-      }
-    } else {
-      const { error } = await supabase.from('whatsapp_config').insert({
-        user_id: caller.userId,
-        phone_number_id: body.phone_number_id,
-        waba_id: body.waba_id,
-        access_token: encryptedToken,
-        status: 'connected',
-        connected_at: new Date().toISOString(),
-      })
-
-      if (error) {
-        console.error('[meta/whatsapp/embedded-signup] insert error:', error)
-        return NextResponse.json({ error: 'Failed to save configuration' }, { status: 500 })
-      }
+    if (!body.onboarding_test_phone?.trim()) {
+      return NextResponse.json(
+        { error: 'onboarding_test_phone is required' },
+        { status: 400 },
+      )
     }
 
-    return NextResponse.json({ success: true })
+    const saved = await upsertCredentials({
+      phone_number_id: body.phone_number_id,
+      waba_id: body.waba_id,
+      access_token: body.access_token,
+      onboarding_test_phone: body.onboarding_test_phone.trim(),
+      connection_type: 'embedded_signup',
+      created_by: caller.profileId,
+    })
+
+    if (!saved) {
+      return NextResponse.json({ error: 'Failed to save configuration' }, { status: 500 })
+    }
+
+    scheduleOnboardingPipeline()
+
+    return NextResponse.json({
+      success: true,
+      status: saved.status,
+      onboarding_step: saved.onboarding_step,
+    })
   } catch (err) {
     console.error('[meta/whatsapp/embedded-signup] error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
