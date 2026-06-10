@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import type { FacebookConfigResponse } from '@/lib/meta/types'
+import { META_OAUTH_SCOPES } from '@/lib/meta/oauth-scopes'
 
 interface Props {
   config: FacebookConfigResponse | null
@@ -238,10 +239,13 @@ export function FacebookAccountSection({
 
         <p className="text-xs text-slate-500">
           Required permissions:{' '}
-          <code className="text-slate-400">pages_show_list</code>,{' '}
-          <code className="text-slate-400">pages_manage_metadata</code>,{' '}
-          <code className="text-slate-400">leads_retrieval</code>,{' '}
-          <code className="text-slate-400">pages_read_engagement</code>
+          {META_OAUTH_SCOPES.map((scope, i) => (
+            <span key={scope}>
+              {i > 0 && ', '}
+              <code className="text-slate-400">{scope}</code>
+            </span>
+          ))}
+          . After permission changes, disconnect and reconnect Facebook.
         </p>
       </CardContent>
     </Card>

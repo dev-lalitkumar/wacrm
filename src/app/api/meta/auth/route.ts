@@ -2,13 +2,7 @@ import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import crypto from 'crypto'
 import { requireRole, isErrorResponse } from '@/lib/auth/require-role'
-
-const SCOPES = [
-  'pages_show_list',
-  'pages_manage_metadata',
-  'leads_retrieval',
-  'pages_read_engagement',
-].join(',')
+import { META_OAUTH_SCOPE_STRING } from '@/lib/meta/oauth-scopes'
 
 /**
  * GET /api/meta/auth
@@ -41,7 +35,7 @@ export async function GET() {
     const authUrl = new URL('https://www.facebook.com/v21.0/dialog/oauth')
     authUrl.searchParams.set('client_id', appId)
     authUrl.searchParams.set('redirect_uri', redirectUri)
-    authUrl.searchParams.set('scope', SCOPES)
+    authUrl.searchParams.set('scope', META_OAUTH_SCOPE_STRING)
     authUrl.searchParams.set('response_type', 'code')
     authUrl.searchParams.set('state', state)
 
