@@ -15,8 +15,8 @@ and polish.
 
 - **Inbound event queue** for Meta Lead Ads, integration webhooks, and public
   forms. Every webhook hit is persisted synchronously before the HTTP
-  response; a cron worker (`GET /api/ingest/cron`, every 1 minute on Vercel)
-  processes pending events with retries and full audit in Settings.
+  response; processing runs immediately via Next.js `after()` (works on
+  Vercel Hobby). `GET /api/ingest/cron` remains a backup drain with retries.
 
 ### Changed
 
@@ -27,8 +27,12 @@ and polish.
 ### Migration required
 
 - Apply `supabase/migrations/043_inbound_events.sql`.
-- Set `AUTOMATION_CRON_SECRET` (reused for ingest cron). On Vercel, add the
-  cron path `/api/ingest/cron` (included in `vercel.json`).
+- **Vercel Hobby:** no Vercel Cron needed — `after()` processes events on
+  each webhook hit. Optionally set `AUTOMATION_CRON_SECRET` and ping
+  `GET /api/ingest/cron` every 5–15 min from [cron-job.org](https://cron-job.org)
+  (header `x-cron-secret`) as a safety net for stuck `pending` rows.
+- **Vercel Pro (optional):** add a `vercel.json` cron for `/api/ingest/cron`
+  every minute, or use the same external pinger as Hobby.
 
 ## [0.2.0] — 2026-05-22
 

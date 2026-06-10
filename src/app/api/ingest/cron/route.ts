@@ -4,8 +4,9 @@ import { drainInboundEvents } from '@/lib/ingest/processor'
 /**
  * GET /api/ingest/cron
  *
- * Drains pending inbound_events (Meta leads, integration webhooks, public forms).
- * Schedule every 1 minute in Vercel Cron (see vercel.json).
+ * Backup drain for pending inbound_events. Primary processing uses after()
+ * on ingress; this catches failures and stuck rows. Ping from an external
+ * scheduler (cron-job.org) every 5–15 min, or add vercel.json crons on Pro.
  *
  * Auth: x-cron-secret header must match AUTOMATION_CRON_SECRET.
  */

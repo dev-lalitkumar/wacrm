@@ -4,6 +4,7 @@ import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { recordInboundEvent } from '@/lib/ingest/record'
 import { extractMetaLeadgenChanges } from '@/lib/ingest/parse-meta'
 import { sanitizeInboundHeaders } from '@/lib/ingest/headers'
+import { scheduleInboundEventProcessing } from '@/lib/ingest/schedule'
 import type { LeadgenWebhookPayload } from '@/lib/meta/types'
 
 /**
@@ -44,7 +45,7 @@ export async function GET(request: Request) {
  * POST /api/meta/webhook
  *
  * Persists each leadgen change as an inbound_events row synchronously,
- * then returns 200. Processing runs via /api/ingest/cron.
+ * then returns 200. Processing runs immediately via after(); cron is backup.
  */
 export async function POST(request: Request) {
   const rawBody = await request.text()
@@ -86,6 +87,7 @@ export async function POST(request: Request) {
 
   const changes = extractMetaLeadgenChanges(body)
   const eventIds: string[] = []
+  const toProcess: string[] = []
 
   if (changes.length === 0) {
     const recorded = await recordInboundEvent(admin, {
@@ -118,7 +120,12 @@ export async function POST(request: Request) {
     }
 
     eventIds.push(recorded.eventId)
+    if (!recorded.duplicate) {
+      toProcess.push(recorded.eventId)
+    }
   }
+
+  scheduleInboundEventProcessing(toProcess)
 
   return NextResponse.json({ status: 'received', event_ids: eventIds })
 }

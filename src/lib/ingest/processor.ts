@@ -96,10 +96,31 @@ export async function processInboundEvent(
     return { ok: false, status: 'not_found' }
   }
 
-  const event = row as InboundEvent
+  let event = row as InboundEvent
 
   if (['success', 'skipped', 'rejected'].includes(event.status)) {
     return { ok: true, status: event.status }
+  }
+
+  if (event.status === 'pending' || event.status === 'failed') {
+    const workerId = `inline-${eventId.slice(0, 8)}`
+    const { data: claimed } = await admin
+      .from('inbound_events')
+      .update({
+        status: 'processing',
+        claimed_by: workerId,
+        claimed_at: new Date().toISOString(),
+        attempt_count: event.attempt_count + 1,
+      })
+      .eq('id', eventId)
+      .in('status', ['pending', 'failed'])
+      .select('*')
+      .maybeSingle()
+
+    if (!claimed) {
+      return { ok: true, status: 'delegated' }
+    }
+    event = claimed as InboundEvent
   }
 
   try {

@@ -5,6 +5,7 @@ import { checkRateLimit } from '@/lib/integrations/rate-limit'
 import { recordInboundEvent } from '@/lib/ingest/record'
 import { integrationIdempotencyKey } from '@/lib/ingest/idempotency'
 import { sanitizeInboundHeaders } from '@/lib/ingest/headers'
+import { scheduleInboundEventProcessing } from '@/lib/ingest/schedule'
 
 /**
  * POST /api/forms/[webhookId]
@@ -98,6 +99,10 @@ export async function POST(
 
   if (recorded.error || !recorded.eventId) {
     return NextResponse.json({ error: 'Could not submit. Please try again.' }, { status: 500 })
+  }
+
+  if (!recorded.duplicate) {
+    scheduleInboundEventProcessing(recorded.eventId)
   }
 
   return NextResponse.json(

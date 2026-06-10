@@ -6,6 +6,7 @@ import { recordInboundEvent, findDuplicateIntegrationEvent } from '@/lib/ingest/
 import { integrationIdempotencyKey } from '@/lib/ingest/idempotency'
 import { validateIntegrationWebhookSecret } from '@/lib/ingest/integration-processor'
 import { sanitizeInboundHeaders } from '@/lib/ingest/headers'
+import { scheduleInboundEventProcessing } from '@/lib/ingest/schedule'
 
 const PAYLOAD_PREVIEW_BYTES = 1024
 
@@ -13,7 +14,7 @@ const PAYLOAD_PREVIEW_BYTES = 1024
  * POST /api/integrations/webhook/[webhookId]
  *
  * Validates auth, queues the payload in inbound_events, returns 202.
- * Contact/deal creation runs via /api/ingest/cron.
+ * Contact/deal creation runs immediately via after(); cron is backup.
  */
 export async function POST(
   request: Request,
@@ -129,6 +130,8 @@ export async function POST(
       { status: 202 },
     )
   }
+
+  scheduleInboundEventProcessing(recorded.eventId)
 
   return NextResponse.json(
     { event_id: recorded.eventId, status: 'pending' },
